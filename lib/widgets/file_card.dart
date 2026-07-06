@@ -12,26 +12,25 @@ class FileCard extends StatefulWidget {
   final CloudFile file;
   final VoidCallback? onRefresh;
   const FileCard({super.key, required this.file, this.onRefresh});
-
   @override
   State<FileCard> createState() => _FileCardState();
 }
 
 class _FileCardState extends State<FileCard> {
   bool _downloading = false;
-  double _downloadProgress = 0;
+  double _progress = 0;
 
-  Color get _typeColor {
+  Color get _color {
     switch (widget.file.type) {
       case FileType.image:    return AppConstants.greenColor;
       case FileType.video:    return AppConstants.redColor;
       case FileType.audio:    return AppConstants.purpleColor;
       case FileType.document: return AppConstants.orangeColor;
-      default:                return Colors.grey;
+      default:                return Colors.blueGrey;
     }
   }
 
-  IconData get _typeIcon {
+  IconData get _icon {
     switch (widget.file.type) {
       case FileType.image:    return Icons.image_rounded;
       case FileType.video:    return Icons.videocam_rounded;
@@ -41,44 +40,42 @@ class _FileCardState extends State<FileCard> {
     }
   }
 
-  Future<void> _openFile() async {
-    if (widget.file.type == FileType.image ||
-        widget.file.type == FileType.video ||
-        widget.file.type == FileType.audio) {
+  void _open() {
+    if ([FileType.image, FileType.video, FileType.audio]
+        .contains(widget.file.type)) {
       Get.to(() => MediaViewerScreen(file: widget.file),
           transition: Transition.fadeIn);
     } else {
-      _downloadFile();
+      _download();
     }
   }
 
-  Future<void> _downloadFile() async {
+  Future<void> _download() async {
     if (_downloading) return;
-    setState(() { _downloading = true; _downloadProgress = 0; });
-
+    setState(() { _downloading = true; _progress = 0; });
     final path = await TelegramService.instance.downloadFile(
       widget.file,
-      onProgress: (p, s, t) => setState(() => _downloadProgress = p),
+      onProgress: (p, _, __) => setState(() => _progress = p),
     );
-
+    setState(() => _downloading = false);
     if (path != null) {
       await FileStorageService.instance.updateLocalPath(widget.file.id, path);
-      Get.snackbar('✅ تم التنزيل', 'تم حفظ: ${widget.file.name}',
-          backgroundColor: AppConstants.greenColor, colorText: Colors.white);
+      Get.snackbar('✅ تم', 'حُفظ: ${widget.file.name}',
+          backgroundColor: AppConstants.greenColor, colorText: Colors.white,
+          duration: const Duration(seconds: 2));
     } else {
-      Get.snackbar('❌ خطأ', 'تعذر تنزيل الملف',
+      Get.snackbar('❌ خطأ', 'فشل التنزيل',
           backgroundColor: AppConstants.redColor, colorText: Colors.white);
     }
-
-    setState(() => _downloading = false);
   }
 
-  Future<void> _deleteFile() async {
-    final confirm = await Get.dialog<bool>(AlertDialog(
+  Future<void> _delete() async {
+    final ok = await Get.dialog<bool>(AlertDialog(
       backgroundColor: AppConstants.cardDark,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       title: const Text('حذف الملف', style: TextStyle(color: Colors.white)),
       content: Text('هل تريد حذف "${widget.file.name}"؟',
-          style: const TextStyle(color: Colors.grey)),
+          style: TextStyle(color: Colors.grey[400])),
       actions: [
         TextButton(onPressed: () => Get.back(result: false),
             child: const Text('إلغاء')),
@@ -89,10 +86,10 @@ class _FileCardState extends State<FileCard> {
         ),
       ],
     ));
-
-    if (confirm == true) {
+    if (ok == true) {
       if (widget.file.telegramMessageId != null) {
-        await TelegramService.instance.deleteFile(widget.file.telegramMessageId!);
+        await TelegramService.instance
+            .deleteFile(widget.file.telegramMessageId!);
       }
       await FileStorageService.instance.deleteFile(widget.file.id);
       widget.onRefresh?.call();
@@ -101,114 +98,109 @@ class _FileCardState extends State<FileCard> {
 
   @override
   Widget build(BuildContext context) {
-    final file = widget.file;
+    final f = widget.file;
     return GestureDetector(
-      onTap: _openFile,
+      onTap: _open,
       child: Container(
         margin: const EdgeInsets.only(bottom: 10),
-        padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
           color: AppConstants.cardDark,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: _typeColor.withOpacity(0.2)),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: _color.withOpacity(.15)),
         ),
-        child: Column(
-          children: [
-            Row(
-              children: [
-                // Icon
-                Container(
-                  width: 48,
-                  height: 48,
-                  decoration: BoxDecoration(
-                    color: _typeColor.withOpacity(0.15),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Icon(_typeIcon, color: _typeColor, size: 26),
-                ),
-                const SizedBox(width: 12),
-                // Info
-                Expanded(
-                  child: Column(
+        child: Column(children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            child: Row(children: [
+              // Icon
+              Container(
+                width: 48, height: 48,
+                decoration: BoxDecoration(
+                    color: _color.withOpacity(.13),
+                    borderRadius: BorderRadius.circular(14)),
+                child: Icon(_icon, color: _color, size: 24),
+              ),
+              const SizedBox(width: 12),
+              // Info
+              Expanded(
+                child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(file.name,
+                      Text(f.name,
                           style: const TextStyle(
                               color: Colors.white,
                               fontWeight: FontWeight.w600,
                               fontSize: 14),
                           overflow: TextOverflow.ellipsis),
                       const SizedBox(height: 4),
-                      Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 6, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: _typeColor.withOpacity(0.15),
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                            child: Text(file.typeLabel,
-                                style: TextStyle(
-                                    color: _typeColor, fontSize: 10)),
-                          ),
-                          const SizedBox(width: 8),
-                          Text(file.sizeFormatted,
-                              style: TextStyle(
-                                  color: Colors.grey[500], fontSize: 12)),
-                          const SizedBox(width: 8),
-                          Text(
-                            DateFormat('dd/MM/yy').format(file.uploadedAt),
+                      Row(children: [
+                        _badge(f.typeLabel, _color),
+                        const SizedBox(width: 6),
+                        Text(f.sizeFormatted,
                             style: TextStyle(
-                                color: Colors.grey[600], fontSize: 11),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-                // Actions
-                Row(
-                  children: [
-                    IconButton(
-                      icon: Icon(
-                        file.isFavorite
-                            ? Icons.favorite_rounded
-                            : Icons.favorite_border_rounded,
-                        color: file.isFavorite ? Colors.red : Colors.grey,
-                        size: 20,
-                      ),
-                      onPressed: () async {
-                        await FileStorageService.instance.toggleFavorite(file.id);
-                        widget.onRefresh?.call();
-                      },
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.download_rounded,
-                          color: AppConstants.primaryColor, size: 20),
-                      onPressed: _downloadFile,
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.delete_rounded,
-                          color: AppConstants.redColor, size: 20),
-                      onPressed: _deleteFile,
-                    ),
-                  ],
-                ),
-              ],
-            ),
-            if (_downloading) ...[
-              const SizedBox(height: 8),
-              LinearProgressIndicator(
-                value: _downloadProgress,
-                backgroundColor: Colors.grey[800],
-                color: AppConstants.primaryColor,
-                borderRadius: BorderRadius.circular(4),
+                                color: Colors.grey[500], fontSize: 11)),
+                        const SizedBox(width: 6),
+                        Text(
+                            DateFormat('dd/MM/yy').format(f.uploadedAt),
+                            style: TextStyle(
+                                color: Colors.grey[600], fontSize: 11)),
+                      ]),
+                    ]),
               ),
-            ],
-          ],
-        ),
+              // Actions
+              Row(mainAxisSize: MainAxisSize.min, children: [
+                _iconBtn(
+                  f.isFavorite
+                      ? Icons.favorite_rounded
+                      : Icons.favorite_border_rounded,
+                  f.isFavorite ? Colors.red : Colors.grey[600]!,
+                  () async {
+                    await FileStorageService.instance.toggleFavorite(f.id);
+                    widget.onRefresh?.call();
+                  },
+                ),
+                _iconBtn(Icons.download_rounded, AppConstants.primaryColor,
+                    _download),
+                _iconBtn(Icons.delete_outline_rounded,
+                    AppConstants.redColor.withOpacity(.8), _delete),
+              ]),
+            ]),
+          ),
+          if (_downloading)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(4),
+                child: LinearProgressIndicator(
+                  value: _progress,
+                  minHeight: 3,
+                  backgroundColor: Colors.grey[800],
+                  color: AppConstants.primaryColor,
+                ),
+              ),
+            ),
+        ]),
       ),
     );
   }
+
+  Widget _badge(String text, Color color) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+        decoration: BoxDecoration(
+            color: color.withOpacity(.15),
+            borderRadius: BorderRadius.circular(6)),
+        child: Text(text,
+            style: TextStyle(
+                color: color, fontSize: 10, fontWeight: FontWeight.w600)),
+      );
+
+  Widget _iconBtn(IconData icon, Color color, VoidCallback onTap) =>
+      InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(20),
+        child: Padding(
+          padding: const EdgeInsets.all(6),
+          child: Icon(icon, color: color, size: 20),
+        ),
+      );
 }

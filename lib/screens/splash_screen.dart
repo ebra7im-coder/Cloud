@@ -5,58 +5,45 @@ import '../utils/constants.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
-
   @override
   State<SplashScreen> createState() => _SplashScreenState();
 }
 
 class _SplashScreenState extends State<SplashScreen>
     with TickerProviderStateMixin {
-  late AnimationController _logoController;
-  late AnimationController _textController;
-  late Animation<double> _scaleAnim;
-  late Animation<double> _fadeAnim;
-  late Animation<Offset> _slideAnim;
+  late AnimationController _logoCtrl;
+  late AnimationController _textCtrl;
+  late Animation<double> _scale;
+  late Animation<double> _fade;
+  late Animation<Offset> _slide;
 
   @override
   void initState() {
     super.initState();
-    _logoController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 900),
-    );
-    _textController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 700),
-    );
-
-    _scaleAnim = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(parent: _logoController, curve: Curves.elasticOut),
-    );
-    _fadeAnim = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(parent: _textController, curve: Curves.easeIn),
-    );
-    _slideAnim = Tween<Offset>(
-      begin: const Offset(0, 0.5),
-      end: Offset.zero,
-    ).animate(CurvedAnimation(parent: _textController, curve: Curves.easeOut));
-
-    _startAnimation();
+    _logoCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 900));
+    _textCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 700));
+    _scale = Tween<double>(begin: 0, end: 1).animate(
+        CurvedAnimation(parent: _logoCtrl, curve: Curves.elasticOut));
+    _fade = Tween<double>(begin: 0, end: 1).animate(
+        CurvedAnimation(parent: _textCtrl, curve: Curves.easeIn));
+    _slide = Tween<Offset>(begin: const Offset(0, .4), end: Offset.zero).animate(
+        CurvedAnimation(parent: _textCtrl, curve: Curves.easeOut));
+    _start();
   }
 
-  Future<void> _startAnimation() async {
+  Future<void> _start() async {
     await Future.delayed(const Duration(milliseconds: 300));
-    _logoController.forward();
-    await Future.delayed(const Duration(milliseconds: 500));
-    _textController.forward();
+    _logoCtrl.forward();
+    await Future.delayed(const Duration(milliseconds: 600));
+    _textCtrl.forward();
     await Future.delayed(const Duration(milliseconds: 1800));
     Get.off(() => const HomeScreen(), transition: Transition.fadeIn);
   }
 
   @override
   void dispose() {
-    _logoController.dispose();
-    _textController.dispose();
+    _logoCtrl.dispose();
+    _textCtrl.dispose();
     super.dispose();
   }
 
@@ -64,75 +51,70 @@ class _SplashScreenState extends State<SplashScreen>
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppConstants.bgDark,
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            ScaleTransition(
-              scale: _scaleAnim,
-              child: Container(
-                width: 120,
-                height: 120,
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFF2AABEE), Color(0xFF229ED9)],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                  borderRadius: BorderRadius.circular(30),
-                  boxShadow: [
-                    BoxShadow(
-                      color: AppConstants.primaryColor.withOpacity(0.4),
-                      blurRadius: 30,
-                      spreadRadius: 5,
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Color(0xFF0D1B2A), Color(0xFF17212B), Color(0xFF1A2A3A)],
+          ),
+        ),
+        child: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              ScaleTransition(
+                scale: _scale,
+                child: Container(
+                  width: 110,
+                  height: 110,
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFF2AABEE), Color(0xFF1565C0)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
                     ),
-                  ],
-                ),
-                child: const Icon(
-                  Icons.cloud_done_rounded,
-                  size: 65,
-                  color: Colors.white,
+                    borderRadius: BorderRadius.circular(28),
+                    boxShadow: [
+                      BoxShadow(
+                        color: AppConstants.primaryColor.withOpacity(.5),
+                        blurRadius: 40,
+                        spreadRadius: 8,
+                      ),
+                    ],
+                  ),
+                  child: const Icon(Icons.cloud_done_rounded,
+                      size: 60, color: Colors.white),
                 ),
               ),
-            ),
-            const SizedBox(height: 30),
-            SlideTransition(
-              position: _slideAnim,
-              child: FadeTransition(
-                opacity: _fadeAnim,
-                child: Column(
-                  children: [
-                    const Text(
-                      'CloudGram',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 32,
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: 1.5,
-                      ),
-                    ),
+              const SizedBox(height: 32),
+              SlideTransition(
+                position: _slide,
+                child: FadeTransition(
+                  opacity: _fade,
+                  child: Column(children: [
+                    const Text('CloudGram',
+                        style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 34,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 1.5)),
                     const SizedBox(height: 8),
-                    Text(
-                      'تخزين سحابي لا محدود عبر تيليجرام',
-                      style: TextStyle(
-                        color: Colors.white.withOpacity(0.6),
-                        fontSize: 14,
-                      ),
-                    ),
+                    Text('تخزين سحابي لا محدود ☁️',
+                        style: TextStyle(
+                            color: Colors.white.withOpacity(.6), fontSize: 15)),
                     const SizedBox(height: 40),
                     SizedBox(
-                      width: 40,
-                      height: 40,
+                      width: 36,
+                      height: 36,
                       child: CircularProgressIndicator(
-                        color: AppConstants.primaryColor,
-                        strokeWidth: 3,
-                      ),
+                          color: AppConstants.primaryColor, strokeWidth: 2.5),
                     ),
-                  ],
+                  ]),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
