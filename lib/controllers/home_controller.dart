@@ -4,9 +4,14 @@ import '../services/telegram_service.dart';
 import '../models/file_model.dart';
 
 class HomeController extends GetxController {
-  final currentIndex = 0.obs;
-  final isLoading    = false.obs;
-  final allFiles     = <CloudFile>[].obs;
+  final currentIndex  = 0.obs;
+  final isLoading     = false.obs;
+  final allFiles      = <CloudFile>[].obs;
+
+  // UI state
+  final userName      = 'CloudGram'.obs;
+  final totalFiles    = 0.obs;
+  final usedStorageMB = 0.0.obs;
 
   @override
   void onInit() {
@@ -16,6 +21,16 @@ class HomeController extends GetxController {
 
   void loadFiles() {
     allFiles.value = FileStorageService.instance.getAllFiles();
+    final stats = FileStorageService.instance.getStats();
+    totalFiles.value    = stats['total'] as int;
+    usedStorageMB.value = (stats['size'] as int) / (1024 * 1024);
+  }
+
+  String get usedStorageDisplay {
+    if (usedStorageMB.value >= 1024) {
+      return '${(usedStorageMB.value / 1024).toStringAsFixed(2)} GB';
+    }
+    return '${usedStorageMB.value.toStringAsFixed(1)} MB';
   }
 
   Future<void> syncFiles() async {
@@ -29,6 +44,5 @@ class HomeController extends GetxController {
     }
   }
 
-  Map<String, dynamic> get stats =>
-      FileStorageService.instance.getStats();
+  Map<String, dynamic> get stats => FileStorageService.instance.getStats();
 }

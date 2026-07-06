@@ -10,29 +10,42 @@ on:
 jobs:
 
   # ============================================================
-  # ANDROID  (working)
+  # ANDROID APK
   # ============================================================
   android:
     name: Android APK
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
+
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: "3.27.4"
           channel: stable
           cache: true
-      - run: flutter pub get
-      - run: mkdir -p assets/icons assets/images
-      - run: |
+
+      - name: pub get
+        run: flutter pub get
+
+      - name: create asset dirs
+        run: mkdir -p assets/icons assets/images
+
+      - name: write local.properties
+        run: |
           echo "flutter.sdk=$FLUTTER_ROOT"  > android/local.properties
           echo "sdk.dir=$ANDROID_SDK_ROOT" >> android/local.properties
-      - run: flutter build apk --release --split-per-abi
-      - run: flutter build appbundle --release
+
+      - name: build APK
+        run: flutter build apk --release --split-per-abi
+
+      - name: build AAB
+        run: flutter build appbundle --release
+
       - uses: actions/upload-artifact@v4
         with:
           name: android
@@ -42,36 +55,57 @@ jobs:
           retention-days: 30
 
   # ============================================================
-  # iOS  (working)
+  # iOS
   # ============================================================
   ios:
     name: iOS Build
-    runs-on: macos-latest
+    runs-on: macos-13
     steps:
       - uses: actions/checkout@v4
+
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: "3.27.4"
           channel: stable
           cache: true
-      - run: flutter pub get
-      - run: mkdir -p assets/icons assets/images
-      - run: |
+
+      - name: pub get
+        run: flutter pub get
+
+      - name: create asset dirs
+        run: mkdir -p assets/icons assets/images
+
+      - name: pod install
+        run: |
           cd ios && rm -f Podfile.lock
           pod install --repo-update 2>&1 || true
-      - run: flutter build ios --simulator --debug --no-codesign
-      - run: |
+
+      - name: build iOS simulator debug
+        run: flutter build ios --simulator --debug --no-codesign
+
+      - name: zip simulator app
+        run: |
           APP=$(find build/ios -name "Runner.app" -type d | head -1)
+          echo "App: $APP"
           cd "$(dirname "$APP")"
           zip -r "$GITHUB_WORKSPACE/CloudGram-iOS-Simulator.zip" Runner.app
-      - run: |
+
+      - name: build iOS device (best-effort)
+        run: |
           flutter build ios --release --no-codesign \
-            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" || true
-      - run: |
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" || true
+
+      - name: package IPA
+        run: |
           if [ -d "build/ios/iphoneos/Runner.app" ]; then
-            mkdir Payload && cp -r build/ios/iphoneos/Runner.app Payload/
-            zip -r CloudGram-iOS-Device.ipa Payload/ && rm -rf Payload
+            mkdir Payload
+            cp -r build/ios/iphoneos/Runner.app Payload/
+            zip -r CloudGram-iOS-Device.ipa Payload/
+            rm -rf Payload
           fi
+
       - uses: actions/upload-artifact@v4
         with:
           name: ios
@@ -82,361 +116,47 @@ jobs:
           retention-days: 30
 
   # ============================================================
-  # WINDOWS EXE
-  # Strategy (proven working pieces):
-  #  1. flutter create --platforms=windows  → proper CMakeLists.txt
-  #  2. flutter pub get                     → plugin symlinks in ephemeral/
-  #  3. flutter precache --windows          → engine DLLs in cache
-  #  4. Copy engine DLLs to ephemeral/      → flutter_windows.dll etc.
-  #  5. Patch flutter_tools dart source     → Ninja generator, no -A flag
-  #  6. Delete snapshot+.dart_tool          → force JIT from patched source
-  #  7. cmake -G Ninja                      → configure (no flutter wrapper)
-  #  8. Patch build.ninja                   → fix /wd"4100" → /wd4100
-  #  9. flutter assemble                    → generate AOT + assets
-  # 10. ninja build                         → compile
-  # ============================================================
-  windows:
-    name: Windows EXE
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: subosito/flutter-action@v2
-        with:
-          flutter-version: "3.27.4"
-          channel: stable
-          cache: true
-
-      - name: enable-windows-desktop
-        run: flutter config --enable-windows-desktop
-
-      - name: pub-get
-        run: flutter pub get
-
-      - name: create-asset-dirs
-        shell: pwsh
-        run: New-Item -Force -ItemType Directory assets\icons, assets\images | Out-Null
-
-      - name: setup-msvc
-        uses: ilammy/msvc-dev-cmd@v1
-        with:
-          arch: x64
-
-      - name: setup-windows-platform
-        shell: pwsh
-        run: |
-          Set-StrictMode -Off
-
-          # 1. Generate windows/ platform
-          flutter create --platforms=windows --org com.cloudgram . 2>&1 |
-            Where-Object { $_ -match 'CMakeLists|created' } | Write-Host
-
-          # 2. Pub get to generate plugin symlinks
-          flutter pub get
-          Write-Host "pub get done"
-
-          # 3. Verify symlinks exist
-          $ep = "windows\flutter\ephemeral"
-          $sl = [IO.Path]::Combine($ep, ".plugin_symlinks")
-          if (Test-Path $sl) {
-            Write-Host "symlinks OK: $(Get-ChildItem $sl | Select-Object -ExpandProperty Name)"
-          } else {
-            Write-Host "symlinks missing - creating junctions from pub cache"
-            New-Item -Force -ItemType Directory $sl | Out-Null
-            $cache = $env:PUB_CACHE
-            $plugs = @("connectivity_plus","file_selector_windows",
-                       "permission_handler_windows","share_plus","url_launcher_windows",
-                       "open_file","video_player_windows")
-            foreach ($p in $plugs) {
-              $src = Get-ChildItem "$cache\hosted\pub.dev" -Filter "$p-*" -EA SilentlyContinue |
-                     Sort-Object Name | Select-Object -Last 1
-              if ($src) {
-                $dst = "$sl\$p"
-                if (-not (Test-Path $dst)) {
-                  New-Item -ItemType Junction -Path $dst -Target $src.FullName -EA SilentlyContinue | Out-Null
-                  Write-Host "junction: $p"
-                }
-              }
-            }
-          }
-
-          # 4. Precache engine DLLs
-          flutter precache --windows
-          Write-Host "engine precached"
-
-          # 5. Copy engine DLLs to ephemeral
-          New-Item -Force -ItemType Directory $ep | Out-Null
-          $edirs = @(
-            "$env:FLUTTER_ROOT\bin\cache\artifacts\engine\windows-x64-release",
-            "$env:FLUTTER_ROOT\bin\cache\artifacts\engine\windows-x64"
-          )
-          foreach ($ed in $edirs) {
-            if (Test-Path $ed) {
-              Copy-Item "$ed\*" $ep -Force -EA SilentlyContinue
-              Write-Host "copied engine from $ed"
-              break
-            }
-          }
-
-          # 6. Write generated_config.cmake (path vars without CMake quoting)
-          $flutterRootFwd = $env:FLUTTER_ROOT -replace "\\", "/"
-          $projDirFwd     = (Get-Location).Path -replace "\\", "/"
-          $cfgLines = @(
-            "# CloudGram CI generated",
-            "file(TO_CMAKE_PATH ""$flutterRootFwd"" FLUTTER_ROOT)",
-            "file(TO_CMAKE_PATH ""$projDirFwd"" PROJECT_DIR)",
-            "set(FLUTTER_TARGET_PLATFORM windows-x64)",
-            "set(FLUTTER_TARGET lib/main.dart)",
-            "set(FLUTTER_BUILD_MODE release)",
-            "set(FLUTTER_BUILD_NUMBER 1)",
-            "set(FLUTTER_BUILD_NAME 1.0.0)"
-          )
-          Set-Content "$ep\generated_config.cmake" $cfgLines -Encoding UTF8
-          Write-Host "generated_config.cmake written"
-
-          # 7. Patch flutter_tools dart source
-          $lib = "$env:FLUTTER_ROOT\packages\flutter_tools\lib\src\windows"
-
-          $vsf = "$lib\\visual_studio.dart"
-          $c = Get-Content $vsf -Raw -Encoding UTF8
-          $c = $c -replace "_  => 'Visual Studio 16 2019'", "_  => 'Ninja'"
-          Set-Content $vsf $c -Encoding UTF8 -NoNewline
-          Write-Host "patched visual_studio.dart"
-
-          $bwf = "$lib\build_windows.dart"
-          $blines = Get-Content $bwf
-          $bout = [System.Collections.Generic.List[string]]::new()
-          $skipN = $false
-          foreach ($bl in $blines) {
-            if ($bl.TrimEnd() -eq "        '-A',") { $skipN = $true; continue }
-            if ($skipN -and $bl.TrimEnd() -match "getCmakeWindowsArch") { $skipN = $false; continue }
-            if ($bl.TrimEnd() -eq "          ...<String>['--target', 'INSTALL'],") { continue }
-            $bout.Add($bl)
-          }
-          Set-Content $bwf $bout -Encoding UTF8
-          Write-Host "patched build_windows.dart"
-
-          # 8. Delete snapshot to force JIT recompile
-          $kills = @(
-            "$env:FLUTTER_ROOT\bin\cache\flutter_tools.snapshot",
-            "$env:FLUTTER_ROOT\bin\cache\flutter_tools.stamp",
-            "$env:FLUTTER_ROOT\packages\flutter_tools\.dart_tool"
-          )
-          foreach ($k in $kills) {
-            if (Test-Path $k) { Remove-Item $k -Recurse -Force; Write-Host "deleted $k" }
-          }
-          Write-Host "Setup complete"
-
-      - name: cmake-configure
-        shell: pwsh
-        run: |
-          Set-StrictMode -Off
-          $vsPath = (& "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath)
-          $cmake  = "$vsPath\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe"
-          $ninja  = "$vsPath\Common7\IDE\CommonExtensions\Microsoft\CMake\Ninja\ninja.exe"
-          $env:PATH = [IO.Path]::GetDirectoryName($ninja) + ";" + $env:PATH
-
-          Write-Host "cmake: $cmake"
-          Write-Host "ninja: $ninja"
-
-          $buildDir = "build\windows\x64"
-          New-Item -Force -ItemType Directory $buildDir | Out-Null
-
-          & $cmake -S windows -B $buildDir `
-            -G "Ninja" `
-            -DCMAKE_BUILD_TYPE=Release `
-            -DFLUTTER_TARGET_PLATFORM=windows-x64 `
-            -DCMAKE_C_COMPILER=cl `
-            -DCMAKE_CXX_COMPILER=cl `
-            -DCMAKE_MAKE_PROGRAM="$ninja"
-
-          if ($LASTEXITCODE -ne 0) { Write-Error "cmake failed ($LASTEXITCODE)"; exit 1 }
-          Write-Host "cmake configure OK"
-
-          # Patch build.ninja: fix /wd"NNNN" and neutralize broken flutter engine rule
-          # The flutter engine rule fails because it tries to run flutter_tools to download
-          # engine files, but our patched flutter_tools recompile takes too long.
-          # Since we already copied engine files in setup step, we mark them as phony targets.
-          $flutterNinja = "build\windows\x64\flutter\build.ninja"
-          if (Test-Path $flutterNinja) {
-            $fn = Get-Content $flutterNinja -Raw -Encoding UTF8
-            # Replace the CUSTOM_COMMAND rule that generates flutter engine files
-            # with a simple stamp rule (files already exist from precache+copy)
-            $phonyBlock = "CUSTOM_COMMAND"
-            if ($fn -match "flutter_windows\.dll") {
-              # Find and replace the build command that generates flutter_windows.dll
-              # by making it a no-op
-              $fnLines = ($fn -split "\r?\n")
-              $out2 = [System.Collections.Generic.List[string]]::new()
-              $skip2 = $false
-              foreach ($fl in $fnLines) {
-                if ($fl -match "^build .* flutter_windows") { $skip2 = $true }
-                if (-not $skip2) { $out2.Add($fl) }
-                if ($skip2 -and $fl.Trim() -eq "") { $skip2 = $false }
-              }
-              $fn = $out2 -join "`n"
-              Set-Content $flutterNinja $fn -Encoding UTF8 -NoNewline
-              Write-Host "Patched flutter engine build rule"
-            }
-          }
-
-          # Patch build.ninja files: /wd"NNNN" -> /wdNNNN
-          Get-ChildItem -Recurse $buildDir -Filter "*.ninja" | ForEach-Object {
-            $t = Get-Content $_.FullName -Raw -Encoding UTF8
-            if ($t -match '/wd\\"') {
-              $t2 = [regex]::Replace($t, '/wd\\"(\d+)\\"', '/wd$1')
-              Set-Content $_.FullName $t2 -Encoding UTF8 -NoNewline
-              Write-Host "patched $($_.Name)"
-            }
-          }
-          Write-Host "ninja files patched"
-
-          # Replace the CUSTOM_COMMAND rule for engine files with phony
-          # The build.ninja has: build <abs_path>/flutter_windows.dll ...: CUSTOM_COMMAND
-          # We replace CUSTOM_COMMAND with phony so ninja skips running flutter_tools
-          $fbn = "build\windows\x64\flutter\build.ninja"
-          if (Test-Path $fbn) {
-            $nContent = Get-Content $fbn -Raw -Encoding UTF8
-            # Replace the specific build rule: change from CUSTOM_COMMAND to phony
-            # The rule has flutter_windows.dll in its output list
-            $lines3 = $nContent -split "`n"
-            $out3 = [System.Collections.Generic.List[string]]::new()
-            $inBrokenRule = $false
-            foreach ($l3 in $lines3) {
-              # Detect the CUSTOM_COMMAND rule for flutter engine files
-              if ($l3 -match "^build .*flutter_windows" -and $l3 -match "CUSTOM_COMMAND") {
-                # Replace with phony (extract the build targets part)
-                $targets = ($l3 -split ": CUSTOM_COMMAND")[0]
-                $out3.Add("$targets: phony")
-                $inBrokenRule = $true
-                continue
-              }
-              # Skip continuation lines of the broken rule
-              if ($inBrokenRule -and $l3.StartsWith(" ")) { continue }
-              if ($inBrokenRule) { $inBrokenRule = $false }
-              $out3.Add($l3)
-            }
-            $nContent = $out3 -join "`n"
-            Set-Content $fbn $nContent -Encoding UTF8 -NoNewline
-            Write-Host "Engine build rule replaced with phony"
-          } else {
-            Write-Host "flutter/build.ninja not found yet"
-          }
-
-      - name: ninja-build
-        shell: pwsh
-        run: |
-          Set-StrictMode -Off
-          $vsPath = (& "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath)
-          $ninja  = "$vsPath\Common7\IDE\CommonExtensions\Microsoft\CMake\Ninja\ninja.exe"
-          $env:PATH = [IO.Path]::GetDirectoryName($ninja) + ";" + $env:PATH
-
-          # First: touch all engine files so ninja sees them as up-to-date
-          $ep = "windows\flutter\ephemeral"
-          $engineFiles = @(
-            "flutter_windows.dll","flutter_export.h","flutter_windows.h",
-            "flutter_messenger.h","flutter_plugin_registrar.h","flutter_texture_registrar.h"
-          )
-          $cppFiles = @(
-            "cpp_client_wrapper\core_implementations.cc",
-            "cpp_client_wrapper\standard_codec.cc",
-            "cpp_client_wrapper\plugin_registrar.cc",
-            "cpp_client_wrapper\flutter_engine.cc",
-            "cpp_client_wrapper\flutter_view_controller.cc"
-          )
-          foreach ($ef in ($engineFiles + $cppFiles)) {
-            $fp = "$ep\$ef"
-            if (Test-Path $fp) {
-              (Get-Item $fp).LastWriteTime = Get-Date
-            } else {
-              # Create empty placeholder (will be ignored by ninja if rule still runs)
-              $dir = [IO.Path]::GetDirectoryName($fp)
-              New-Item -Force -ItemType Directory $dir | Out-Null
-              Set-Content $fp "" -Encoding UTF8
-            }
-          }
-          Write-Host "Engine files touched/created"
-
-          Push-Location "build\windows\x64"
-          & $ninja -j 4 2>&1 | Write-Host
-          $code = $LASTEXITCODE
-          Pop-Location
-          if ($code -ne 0) {
-            Write-Warning "ninja exit $code - checking if exe was built..."
-            $exe = Get-ChildItem -Recurse "build\windows\x64" -Filter "cloudgram.exe" -EA SilentlyContinue
-            if ($exe) {
-              Write-Host "cloudgram.exe found despite ninja error - continuing"
-            } else {
-              Write-Error "ninja failed and no exe found"
-              exit 1
-            }
-          } else {
-            Write-Host "ninja build SUCCESS"
-          }
-
-      - name: zip-output
-        shell: pwsh
-        run: |
-          Set-StrictMode -Off
-          $src = @(
-            "build\windows\x64\runner\Release",
-            "build\windows\runner\Release",
-            "build\windows\x64\cloudgram"
-          ) | Where-Object { Test-Path $_ } | Select-Object -First 1
-
-          if (-not $src) {
-            Write-Host "Searching for exe..."
-            Get-ChildItem -Recurse build\windows -Filter "*.exe" |
-              Where-Object { $_.Name -ne "cmake.exe" } |
-              Select-Object FullName | Write-Host
-            exit 1
-          }
-          Write-Host "Zipping from: $src"
-          Compress-Archive -Path "$src\*" -DestinationPath "CloudGram-Windows.zip" -Force
-          Write-Host "$([math]::Round((Get-Item 'CloudGram-Windows.zip').Length/1MB,1)) MB"
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: windows
-          path: CloudGram-Windows.zip
-          retention-days: 30
-
-  # ============================================================
   # RELEASE
   # ============================================================
   release:
     name: GitHub Release
     runs-on: ubuntu-latest
-    needs: [android, ios, windows]
+    needs: [android, ios]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/download-artifact@v4
         with:
           path: artifacts/
-      - id: tag
+
+      - name: compute tag
+        id: tag
         run: |
           VER=$(grep '^version:' pubspec.yaml | awk '{print $2}')
           echo "ver=v${VER}" >> $GITHUB_OUTPUT
           echo "tag=v${VER}-$(date +%Y%m%d%H%M%S)" >> $GITHUB_OUTPUT
-      - run: find artifacts/ -type f | sort
+
+      - name: list artifacts
+        run: find artifacts/ -type f | sort
+
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.tag.outputs.tag }}
           name: "CloudGram ${{ steps.tag.outputs.ver }}"
           body: |
-            ## CloudGram — تخزين سحابي لا محدود عبر تيليجرام
+            ## ☁️ CloudGram — تخزين سحابي لا محدود عبر تيليجرام
 
-            | المنصة | الملف |
-            |--------|-------|
-            | 🤖 Android | app-arm64-v8a-release.apk |
-            | 🍎 iOS Simulator | CloudGram-iOS-Simulator.zip |
-            | 🍎 iOS Device | CloudGram-iOS-Device.ipa |
-            | 🪟 Windows | CloudGram-Windows.zip |
+            | المنصة | الملف | ملاحظة |
+            |--------|-------|--------|
+            | 🤖 Android | `app-arm64-v8a-release.apk` | ✅ موصى به |
+            | 🤖 Android | `app-armeabi-v7a-release.apk` | أجهزة قديمة |
+            | 🍎 iOS Simulator | `CloudGram-iOS-Simulator.zip` | للمحاكي |
+            | 🍎 iOS Device | `CloudGram-iOS-Device.ipa` | AltStore / Sideloadly |
 
-            > Flutter 3.27.4 — GitHub Actions
+            > بُني تلقائياً بواسطة GitHub Actions — Flutter 3.27.4
           files: |
             artifacts/**/*.apk
             artifacts/**/*.aab

@@ -10,6 +10,7 @@ import 'dashboard_screen.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
+
   @override
   Widget build(BuildContext context) {
     Get.put(HomeController());
@@ -20,13 +21,6 @@ class HomeScreen extends StatelessWidget {
 class _HomeView extends GetView<HomeController> {
   const _HomeView();
 
-  static const _items = [
-    {'icon': Icons.home_rounded, 'label': 'الرئيسية'},
-    {'icon': Icons.folder_rounded, 'label': 'الملفات'},
-    {'icon': Icons.search_rounded, 'label': 'بحث'},
-    {'icon': Icons.settings_rounded, 'label': 'إعدادات'},
-  ];
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -34,7 +28,8 @@ class _HomeView extends GetView<HomeController> {
       body: Obx(() => _body()),
       bottomNavigationBar: _bottomNav(),
       floatingActionButton: _fab(),
-      floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
+      floatingActionButtonLocation:
+          FloatingActionButtonLocation.centerDocked,
     );
   }
 
@@ -52,67 +47,77 @@ class _HomeView extends GetView<HomeController> {
     return Obx(() => Container(
       decoration: BoxDecoration(
         color: AppConstants.cardDark,
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(.3), blurRadius: 16)],
+        boxShadow: [
+          BoxShadow(
+              color: Colors.black.withOpacity(0.4),
+              blurRadius: 20,
+              offset: const Offset(0, -4))
+        ],
       ),
       child: SafeArea(
-        child: SizedBox(
-          height: 62,
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: [
-              _navItem(0),
-              _navItem(1),
-              const SizedBox(width: 60),
-              _navItem(2),
-              _navItem(3),
-            ],
+        child: BottomAppBar(
+          color: Colors.transparent,
+          elevation: 0,
+          notchMargin: 8,
+          shape: const CircularNotchedRectangle(),
+          child: SizedBox(
+            height: 58,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: [
+                _navItem(0, Icons.home_rounded, 'الرئيسية'),
+                _navItem(1, Icons.folder_rounded, 'الملفات'),
+                const SizedBox(width: 60), // FAB space
+                _navItem(2, Icons.search_rounded, 'بحث'),
+                _navItem(3, Icons.settings_rounded, 'إعدادات'),
+              ],
+            ),
           ),
         ),
       ),
     ));
   }
 
-  Widget _navItem(int index) {
-    return Obx(() {
-      final active = controller.currentIndex.value == index;
-      final item = _items[index];
-      return GestureDetector(
-        onTap: () => controller.currentIndex.value = index,
-        behavior: HitTestBehavior.opaque,
-        child: SizedBox(
-          width: 64,
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 200),
-            child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-              AnimatedContainer(
-                duration: const Duration(milliseconds: 200),
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                decoration: BoxDecoration(
+  Widget _navItem(int index, IconData icon, String label) {
+    final active = controller.currentIndex.value == index;
+    return GestureDetector(
+      onTap: () => controller.currentIndex.value = index,
+      behavior: HitTestBehavior.opaque,
+      child: SizedBox(
+        width: 64,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+              decoration: BoxDecoration(
+                color: active
+                    ? AppConstants.primaryColor.withOpacity(0.18)
+                    : Colors.transparent,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(icon,
                   color: active
-                      ? AppConstants.primaryColor.withOpacity(.18)
-                      : Colors.transparent,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(
-                  item['icon'] as IconData,
-                  color: active ? AppConstants.primaryColor : Colors.grey[500],
-                  size: 24,
-                ),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                item['label'] as String,
+                      ? AppConstants.primaryColor
+                      : Colors.grey[600],
+                  size: 22),
+            ),
+            const SizedBox(height: 2),
+            Text(label,
                 style: TextStyle(
-                  color: active ? AppConstants.primaryColor : Colors.grey[500],
+                  color: active
+                      ? AppConstants.primaryColor
+                      : Colors.grey[600],
                   fontSize: 10,
-                  fontWeight: active ? FontWeight.w600 : FontWeight.normal,
-                ),
-              ),
-            ]),
-          ),
+                  fontWeight:
+                      active ? FontWeight.w600 : FontWeight.normal,
+                )),
+          ],
         ),
-      );
-    });
+      ),
+    );
   }
 
   Widget _fab() {
