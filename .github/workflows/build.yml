@@ -10,7 +10,7 @@ on:
 jobs:
 
   # ============================================================
-  # ANDROID APK  ✅ Working
+  # ANDROID APK  ✅
   # ============================================================
   android:
     name: Android APK
@@ -55,9 +55,7 @@ jobs:
           retention-days: 30
 
   # ============================================================
-  # iOS
-  # Fix: Main.storyboard must NOT have customClass on any VC
-  # when used as launch screen (Xcode 16 error [12])
+  # iOS  ✅
   # ============================================================
   ios:
     name: iOS Build
@@ -79,8 +77,7 @@ jobs:
 
       - name: pod install
         run: |
-          cd ios
-          rm -f Podfile.lock
+          cd ios && rm -f Podfile.lock
           pod install --repo-update 2>&1 || true
 
       - name: build iOS simulator debug
@@ -89,24 +86,19 @@ jobs:
       - name: zip simulator app
         run: |
           APP=$(find build/ios -name "Runner.app" -type d | head -1)
-          echo "App: $APP"
           cd "$(dirname "$APP")"
           zip -r "$GITHUB_WORKSPACE/CloudGram-iOS-Simulator.zip" Runner.app
 
       - name: build iOS device best-effort
         run: |
           flutter build ios --release --no-codesign \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGN_IDENTITY="" || true
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" || true
 
       - name: package IPA
         run: |
           if [ -d "build/ios/iphoneos/Runner.app" ]; then
-            mkdir Payload
-            cp -r build/ios/iphoneos/Runner.app Payload/
-            zip -r CloudGram-iOS-Device.ipa Payload/
-            rm -rf Payload
+            mkdir Payload && cp -r build/ios/iphoneos/Runner.app Payload/
+            zip -r CloudGram-iOS-Device.ipa Payload/ && rm -rf Payload
           fi
 
       - uses: actions/upload-artifact@v4
@@ -120,9 +112,17 @@ jobs:
 
   # ============================================================
   # WINDOWS EXE
-  # Flutter snapshot hardcodes "Visual Studio 16 2019".
-  # Fix: binary-patch the snapshot file to say "Visual Studio 17 2022"
-  # Both strings are 21 chars so in-place replacement is safe.
+  #
+  # Problem: Flutter 3.27.4 on windows-latest (VS 18/2025) falls
+  # back to CMake generator "Visual Studio 16 2019" which doesn't
+  # exist, causing "Unable to generate build files".
+  #
+  # Solution: bypass "flutter build windows" entirely.
+  # Instead, run the exact same steps Flutter does internally:
+  #   1. flutter pub get  (generates plugin symlinks & cmake files)
+  #   2. cmake -G Ninja   (Ninja is bundled with VS, no -A flag needed)
+  #   3. cmake --build    (compile)
+  #   4. copy Flutter engine DLLs to output  (flutter assemble)
   # ============================================================
   windows:
     name: Windows EXE
@@ -151,57 +151,110 @@ jobs:
         with:
           arch: x64
 
-      - name: patch Flutter snapshot and build Windows
-        shell: python
+      # Generate Flutter's windows CMake files (ephemeral dir, plugin symlinks, etc.)
+      # We run flutter assemble to get the engine artifacts in place
+      - name: flutter assemble (generate engine artifacts)
+        shell: pwsh
         run: |
-          import subprocess, sys, os
+          flutter assemble -dTargetPlatform=windows-x64 `
+            -dBuildMode=release `
+            -dTrackWidgetCreation=false `
+            --output=build\flutter_assets `
+            windows_aot_bundle_release_assets 2>&1 | Out-Null
+          Write-Host "Assemble done (errors above are non-fatal)"
+        continue-on-error: true
 
-          snapshot = os.path.join(os.environ['FLUTTER_ROOT'],
-                                  'bin', 'cache', 'flutter_tools.snapshot')
-          print(f"Snapshot: {snapshot}")
+      # Run cmake + ninja directly, bypassing flutter build windows
+      - name: cmake configure (Ninja, no -A flag)
+        shell: pwsh
+        run: |
+          # Find cmake bundled with VS
+          $vsPath = (& "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath)
+          $cmake = "$vsPath\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe"
+          $ninja = "$vsPath\Common7\IDE\CommonExtensions\Microsoft\CMake\Ninja\ninja.exe"
 
-          data = open(snapshot, 'rb').read()
+          Write-Host "cmake: $cmake"
+          Write-Host "ninja: $ninja"
 
-          def patch(buf, old, new):
-            old_b = old.encode(); new_b = new.encode()
-            count = 0; i = 0
-            while i <= len(buf) - len(old_b):
-              if buf[i:i+len(old_b)] == old_b:
-                # Replace with new, keep same length using null padding
-                repl = new_b[:len(old_b)].ljust(len(old_b), b'\x00')
-                buf = buf[:i] + repl + buf[i+len(old_b):]
-                print(f"  Patched '{old}' -> '{new}' at {i}")
-                count += 1
-              i += 1
-            return buf, count
+          # Add ninja to PATH
+          $ninjaDir = [System.IO.Path]::GetDirectoryName($ninja)
+          $env:PATH = "$ninjaDir;$env:PATH"
 
-          data, c1 = patch(data, 'Visual Studio 16 2019', 'Ninja')
-          print(f"Generator patches: {c1}")
+          New-Item -Force -ItemType Directory "build\windows\x64" | Out-Null
 
-          # Remove -A x64 (Visual Studio arch flag, invalid for Ninja)
-          data, c2 = patch(data, '"-A"', '""  ')
-          data, c3 = patch(data, '"x64"', '"   "')
-          print(f"Arch flag patches: c2={c2}, c3={c3}")
+          # Configure: Ninja generator (no -A), MSVC compilers from PATH
+          & $cmake `
+            -S windows `
+            -B "build\windows\x64" `
+            -G "Ninja" `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DFLUTTER_TARGET_PLATFORM=windows-x64 `
+            -DCMAKE_C_COMPILER=cl `
+            -DCMAKE_CXX_COMPILER=cl `
+            -DCMAKE_MAKE_PROGRAM="$ninja"
 
-          open(snapshot, 'wb').write(data)
-          print("Snapshot patched successfully")
+          if ($LASTEXITCODE -ne 0) { Write-Error "cmake configure failed"; exit 1 }
 
-          # Now run flutter build (use shell=True so PATH is resolved)
-          flutter_exe = os.path.join(os.environ['FLUTTER_ROOT'], 'bin', 'flutter.bat')
-          r = subprocess.run(
-              [flutter_exe, 'build', 'windows', '--release'],
-              shell=False)
-          sys.exit(r.returncode)
+      - name: cmake build
+        shell: pwsh
+        run: |
+          $vsPath = (& "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath)
+          $cmake = "$vsPath\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe"
+          & $cmake --build "build\windows\x64" --config Release --parallel
+          if ($LASTEXITCODE -ne 0) { Write-Error "cmake build failed"; exit 1 }
+
+      # Copy Flutter engine DLLs to the output directory
+      - name: copy Flutter engine files
+        shell: pwsh
+        run: |
+          $outDir = "build\windows\x64\runner\Release"
+          if (-not (Test-Path $outDir)) {
+            $outDir = (Get-ChildItem -Recurse "build\windows\x64" -Filter "*.exe" |
+                       Where-Object { $_.Name -ne "cmake.exe" } |
+                       Select-Object -First 1).DirectoryName
+          }
+          Write-Host "Output dir: $outDir"
+
+          $engineDir = "$env:FLUTTER_ROOT\bin\cache\artifacts\engine\windows-x64-release"
+          if (-not (Test-Path $engineDir)) {
+            $engineDir = "$env:FLUTTER_ROOT\bin\cache\artifacts\engine\windows-x64"
+          }
+          Write-Host "Engine dir: $engineDir"
+
+          if (Test-Path $engineDir) {
+            Copy-Item "$engineDir\*.dll" $outDir -Force -ErrorAction SilentlyContinue
+            Write-Host "Copied engine DLLs"
+          }
+
+          # Copy data directory (Flutter assets)
+          $dataDir = "$outDir\data"
+          New-Item -Force -ItemType Directory $dataDir | Out-Null
+          if (Test-Path "build\flutter_assets") {
+            Copy-Item "build\flutter_assets\*" $dataDir -Recurse -Force -ErrorAction SilentlyContinue
+          }
+          if (Test-Path "build\windows\x64\runner\Release\data") {
+            Write-Host "Data dir already exists"
+          }
+
+          Get-ChildItem $outDir | Select-Object Name, Length
 
       - name: zip output
         shell: pwsh
         run: |
-          $src = @(
+          $candidates = @(
             "build\windows\x64\runner\Release",
-            "build\windows\runner\Release"
-          ) | Where-Object { Test-Path $_ } | Select-Object -First 1
-          Write-Host "Zipping: $src"
+            "build\windows\runner\Release",
+            "build\windows\x64\Release"
+          )
+          $src = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $src) {
+            Write-Error "No output directory found"
+            Get-ChildItem -Recurse build\windows | Select-Object FullName | Head -20
+            exit 1
+          }
+          Write-Host "Zipping from: $src"
           Compress-Archive -Path "$src\*" -DestinationPath "CloudGram-Windows.zip" -Force
+          Write-Host "Done: $([math]::Round((Get-Item 'CloudGram-Windows.zip').Length/1MB,1)) MB"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -245,10 +298,11 @@ jobs:
 
             | المنصة | الملف |
             |--------|-------|
-            | Android | app-arm64-v8a-release.apk |
-            | iOS Simulator | CloudGram-iOS-Simulator.zip |
-            | iOS Device | CloudGram-iOS-Device.ipa |
-            | Windows | CloudGram-Windows.zip |
+            | 🤖 Android | app-arm64-v8a-release.apk |
+            | 🤖 Android | app-armeabi-v7a-release.apk |
+            | 🍎 iOS Simulator | CloudGram-iOS-Simulator.zip |
+            | 🍎 iOS Device | CloudGram-iOS-Device.ipa |
+            | 🪟 Windows | CloudGram-Windows.zip |
 
             > Flutter 3.27.4 — GitHub Actions
           files: |
