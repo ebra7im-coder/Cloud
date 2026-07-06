@@ -253,6 +253,27 @@ jobs:
           if ($LASTEXITCODE -ne 0) { Write-Error "cmake failed ($LASTEXITCODE)"; exit 1 }
           Write-Host "cmake configure OK"
 
+          # Patch build.ninja: fix /wd"NNNN" and neutralize broken flutter engine rule
+          # The flutter engine rule fails because it tries to run flutter_tools to download
+          # engine files, but our patched flutter_tools recompile takes too long.
+          # Since we already copied engine files in setup step, we mark them as phony targets.
+          $flutterNinja = "build\windows\x64\flutter\build.ninja"
+          if (Test-Path $flutterNinja) {
+            $fn = Get-Content $flutterNinja -Raw -Encoding UTF8
+            # Replace the CUSTOM_COMMAND rule that generates flutter engine files
+            # with a simple stamp rule (files already exist from precache+copy)
+            $phonyBlock = "CUSTOM_COMMAND"
+            if ($fn -match "flutter_windows\.dll") {
+              # Find and replace the build command that generates flutter_windows.dll
+              # by making it a no-op
+              $fn = $fn -replace "(?m)^build.*flutter_windows\.dll.*
+(  .*
+)*", ""
+              Set-Content $flutterNinja $fn -Encoding UTF8 -NoNewline
+              Write-Host "Removed flutter_windows.dll build rule"
+            }
+          }
+
           # Patch build.ninja files: /wd"NNNN" -> /wdNNNN
           Get-ChildItem -Recurse $buildDir -Filter "*.ninja" | ForEach-Object {
             $t = Get-Content $_.FullName -Raw -Encoding UTF8
