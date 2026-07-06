@@ -266,11 +266,17 @@ jobs:
             if ($fn -match "flutter_windows\.dll") {
               # Find and replace the build command that generates flutter_windows.dll
               # by making it a no-op
-              $fn = $fn -replace "(?m)^build.*flutter_windows\.dll.*
-(  .*
-)*", ""
+              $fnLines = ($fn -split "\r?\n")
+              $out2 = [System.Collections.Generic.List[string]]::new()
+              $skip2 = $false
+              foreach ($fl in $fnLines) {
+                if ($fl -match "^build .* flutter_windows") { $skip2 = $true }
+                if (-not $skip2) { $out2.Add($fl) }
+                if ($skip2 -and $fl.Trim() -eq "") { $skip2 = $false }
+              }
+              $fn = $out2 -join "`n"
               Set-Content $flutterNinja $fn -Encoding UTF8 -NoNewline
-              Write-Host "Removed flutter_windows.dll build rule"
+              Write-Host "Patched flutter engine build rule"
             }
           }
 
