@@ -269,8 +269,31 @@ jobs:
           Write-Host "cmake: $cmake"
           Write-Host "ninja: $ninja"
 
+          # Verify plugin symlinks exist
+          $symlinkDir = "windows\flutter\ephemeral\.plugin_symlinks"
+          if (Test-Path $symlinkDir) {
+            Write-Host "Symlinks OK: $(Get-ChildItem $symlinkDir | Select-Object -ExpandProperty Name)"
+          } else {
+            Write-Host "Missing symlinks at $symlinkDir - running pub get again"
+            flutter pub get
+            if (-not (Test-Path $symlinkDir)) {
+              # Force create junctions from pub cache
+              New-Item -Force -ItemType Directory $symlinkDir | Out-Null
+              $cache = $env:PUB_CACHE
+              $plugs = @("connectivity_plus","file_selector_windows","permission_handler_windows","share_plus","url_launcher_windows")
+              foreach ($p in $plugs) {
+                $src = Get-ChildItem "$cache\hosted\pub.dev" -Filter "$p-*" -ErrorAction SilentlyContinue |
+                       Sort-Object Name | Select-Object -Last 1
+                if ($src) {
+                  New-Item -ItemType Junction -Path "$symlinkDir\$p" -Target $src.FullName -ErrorAction SilentlyContinue | Out-Null
+                  Write-Host "Junction: $p"
+                }
+              }
+            }
+          }
+
           # Run cmake configure
-          $buildDir = "build\windows\x64"
+          $buildDir = "build\windows\x64" 
           New-Item -Force -ItemType Directory $buildDir | Out-Null
           & $cmake -S windows -B $buildDir -G Ninja `
             -DCMAKE_BUILD_TYPE=Release `
