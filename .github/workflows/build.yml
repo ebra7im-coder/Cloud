@@ -179,6 +179,21 @@ jobs:
 
           Write-Host "Skipping generated_config.cmake - Flutter will generate it"
 
+          # Fix flutter/CMakeLists.txt: the apply_standard_settings macro
+          # passes warning flags with quotes e.g. /wd"4100" which MSVC rejects.
+          # Patch it to use the correct format /wd4100 (no quotes around number)
+          $flutterCmake = "windows\flutter\CMakeLists.txt"
+          if (Test-Path $flutterCmake) {
+            $fc = Get-Content $flutterCmake -Raw -Encoding UTF8
+            # Fix quoted warning numbers: /wd"NNNN" -> /wd NNNN
+            $fc = $fc -replace '/wd\"(\d+)\"', '/wd$1'
+            $fc = $fc -replace "/wd`"(\d+)`"", '/wd$1'
+            Set-Content $flutterCmake $fc -Encoding UTF8 -NoNewline
+            Write-Host "Patched flutter/CMakeLists.txt warning flags"
+          } else {
+            Write-Host "flutter/CMakeLists.txt not found yet (will be created by flutter)"
+          }
+
           # Verify lib file
           if (Test-Path "$ephemeral\flutter_windows.dll.lib") {
             Write-Host "flutter_windows.dll.lib: FOUND ✅"
