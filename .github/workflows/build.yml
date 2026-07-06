@@ -179,8 +179,8 @@ jobs:
           }
 
           # 6. Write generated_config.cmake (path vars without CMake quoting)
-          $flutterRootFwd = $env:FLUTTER_ROOT -replace "\", "/"
-          $projDirFwd     = (Get-Location).Path -replace "\", "/"
+          $flutterRootFwd = $env:FLUTTER_ROOT -replace "\\", "/"
+          $projDirFwd     = (Get-Location).Path -replace "\\", "/"
           $cfgLines = @(
             "# CloudGram CI generated",
             "file(TO_CMAKE_PATH ""$flutterRootFwd"" FLUTTER_ROOT)",
