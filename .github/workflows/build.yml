@@ -152,6 +152,15 @@ jobs:
           arch: x64
 
       # Patch flutter_tools dart source, then delete snapshot to force recompile
+      - name: create windows platform files
+        shell: pwsh
+        run: |
+          # Generate proper windows/ directory via flutter create
+          # This creates correct CMakeLists.txt that flutter expects
+          flutter create --platforms=windows --org com.cloudgram . 2>&1 | Select-String -Pattern "windows" | Write-Host
+          Write-Host "Windows platform files created"
+          Get-ChildItem windows\ | Select-Object Name
+
       - name: patch flutter_tools source for VS2025 + Ninja
         shell: pwsh
         run: |
