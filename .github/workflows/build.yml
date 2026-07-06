@@ -291,18 +291,40 @@ jobs:
           }
           Write-Host "ninja files patched"
 
-          # Add phony rules for flutter engine files (already exist from precache)
-          # This prevents ninja from trying to run flutter_tools to generate them
-          $flutterBuildNinja = "build\windows\x64\flutter\build.ninja"
-          if (Test-Path $flutterBuildNinja) {
-            $phonyLines = @(
-              "",
-              "# CloudGram CI: mark engine files as phony (already exist)",
-              "build windows/flutter/ephemeral/flutter_windows.dll windows/flutter/ephemeral/flutter_export.h windows/flutter/ephemeral/flutter_windows.h windows/flutter/ephemeral/flutter_messenger.h windows/flutter/ephemeral/flutter_plugin_registrar.h windows/flutter/ephemeral/flutter_texture_registrar.h windows/flutter/ephemeral/cpp_client_wrapper/core_implementations.cc windows/flutter/ephemeral/cpp_client_wrapper/standard_codec.cc windows/flutter/ephemeral/cpp_client_wrapper/plugin_registrar.cc windows/flutter/ephemeral/cpp_client_wrapper/flutter_engine.cc windows/flutter/ephemeral/cpp_client_wrapper/flutter_view_controller.cc: phony",
-              ""
+          # Replace the CUSTOM_COMMAND rule for engine files with phony
+          # The build.ninja has: build <abs_path>/flutter_windows.dll ...: CUSTOM_COMMAND
+          # We replace CUSTOM_COMMAND with phony so ninja skips running flutter_tools
+          $fbn = "build\windows\x64\flutter\build.ninja"
+          if (Test-Path $fbn) {
+            $nContent = Get-Content $fbn -Raw -Encoding UTF8
+            # Replace the specific build rule: change from CUSTOM_COMMAND to phony
+            # The rule has flutter_windows.dll in its output list
+            $nContent = [regex]::Replace(
+              $nContent,
+              "(?m)^(build (?:[^
+]*flutter_windows\.dll[^
+]*): )CUSTOM_COMMAND$",
+              '$1phony'
             )
-            Add-Content $flutterBuildNinja ($phonyLines -join "`n") -Encoding UTF8
-            Write-Host "Added phony rules for engine files"
+            # Also remove the COMMAND, RESTAT, etc. lines that follow the build rule
+            $lines3 = $nContent -split "`n"
+            $out3 = [System.Collections.Generic.List[string]]::new()
+            $inPhonyFix = $false
+            foreach ($l3 in $lines3) {
+              if ($l3 -match "^build .*flutter_windows\.dll.*: phony") {
+                $inPhonyFix = $true
+                $out3.Add($l3)
+                continue
+              }
+              if ($inPhonyFix -and $l3.StartsWith(" ")) { continue }
+              if ($inPhonyFix) { $inPhonyFix = $false }
+              $out3.Add($l3)
+            }
+            $nContent = $out3 -join "`n"
+            Set-Content $fbn $nContent -Encoding UTF8 -NoNewline
+            Write-Host "Engine build rule replaced with phony"
+          } else {
+            Write-Host "flutter/build.ninja not found yet"
           }
 
       - name: ninja-build
