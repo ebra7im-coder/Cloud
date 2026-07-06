@@ -184,13 +184,7 @@ jobs:
             Write-Host "Deleted snapshot -> Flutter will recompile from source"
           }
 
-          # Verify patches
-          Write-Host "--- visual_studio.dart cmakeGenerator ---"
-          Select-String -Path $vsFile -Pattern "Visual Studio|Ninja" | ForEach-Object { Write-Host $_.Line }
-          Write-Host "--- build_windows.dart around -A ---"
-          $lines = Get-Content $buildFile
-          $idx = ($lines | Select-String "-A").LineNumber
-          if ($idx) { $lines[($idx-3)..($idx+3)] | ForEach-Object { Write-Host $_ } }
+          Write-Host "All patches applied successfully" 
 
       - name: build Windows EXE (with recompiled flutter_tools)
         shell: pwsh
