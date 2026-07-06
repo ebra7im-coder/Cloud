@@ -186,9 +186,11 @@ jobs:
           open(snapshot, 'wb').write(data)
           print("Snapshot patched successfully")
 
-          # Now run flutter build
-          r = subprocess.run(['flutter', 'build', 'windows', '--release'],
-                             shell=False)
+          # Now run flutter build (use shell=True so PATH is resolved)
+          flutter_exe = os.path.join(os.environ['FLUTTER_ROOT'], 'bin', 'flutter.bat')
+          r = subprocess.run(
+              [flutter_exe, 'build', 'windows', '--release'],
+              shell=False)
           sys.exit(r.returncode)
 
       - name: zip output
