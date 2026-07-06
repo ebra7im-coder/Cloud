@@ -113,16 +113,16 @@ jobs:
   # ============================================================
   # WINDOWS EXE
   #
-  # Problem: Flutter 3.27.4 on windows-latest (VS 18/2025) falls
-  # back to CMake generator "Visual Studio 16 2019" which doesn't
-  # exist, causing "Unable to generate build files".
+  # Problem: Flutter 3.27.4 visual_studio.dart maps only VS 17
+  # to "Visual Studio 17 2022". VS 18 (2025) on windows-latest
+  # falls back to "Visual Studio 16 2019" which doesn't exist.
+  # Also, Flutter passes "-A x64" which Ninja doesn't support.
   #
-  # Solution: bypass "flutter build windows" entirely.
-  # Instead, run the exact same steps Flutter does internally:
-  #   1. flutter pub get  (generates plugin symlinks & cmake files)
-  #   2. cmake -G Ninja   (Ninja is bundled with VS, no -A flag needed)
-  #   3. cmake --build    (compile)
-  #   4. copy Flutter engine DLLs to output  (flutter assemble)
+  # Final solution: patch the flutter_tools dart SOURCE files
+  # (visual_studio.dart + build_windows.dart) then delete the
+  # pre-compiled snapshot so Flutter re-compiles from source on
+  # first run. This is clean, version-independent, and works
+  # with any VS version on the runner.
   # ============================================================
   windows:
     name: Windows EXE
@@ -151,110 +151,61 @@ jobs:
         with:
           arch: x64
 
-      # Generate Flutter's windows CMake files (ephemeral dir, plugin symlinks, etc.)
-      # We run flutter assemble to get the engine artifacts in place
-      - name: flutter assemble (generate engine artifacts)
+      # Patch flutter_tools dart source, then delete snapshot to force recompile
+      - name: patch flutter_tools source for VS2025 + Ninja
         shell: pwsh
         run: |
-          flutter assemble -dTargetPlatform=windows-x64 `
-            -dBuildMode=release `
-            -dTrackWidgetCreation=false `
-            --output=build\flutter_assets `
-            windows_aot_bundle_release_assets 2>&1 | Out-Null
-          Write-Host "Assemble done (errors above are non-fatal)"
-        continue-on-error: true
+          $toolsLib = "$env:FLUTTER_ROOT\packages\flutter_tools\lib\src\windows"
+          Write-Host "Patching: $toolsLib"
 
-      # Run cmake + ninja directly, bypassing flutter build windows
-      - name: cmake configure (Ninja, no -A flag)
+          # 1. visual_studio.dart: add VS 18 mapping
+          $vsFile = "$toolsLib\visual_studio.dart"
+          $content = Get-Content $vsFile -Raw -Encoding UTF8
+          # Add "18 => 'Visual Studio 18 2025'," before the default case
+          $content = $content -replace "(_  => 'Visual Studio 16 2019')", "18 => 'Visual Studio 18 2025',`n      _  => 'Visual Studio 16 2019'"
+          # Also support any unknown version -> use Ninja as fallback
+          $content = $content -replace "_  => 'Visual Studio 16 2019'", "_  => 'Ninja'"
+          Set-Content $vsFile $content -Encoding UTF8 -NoNewline
+          Write-Host "Patched visual_studio.dart"
+
+          # 2. build_windows.dart: remove '-A' and getCmakeWindowsArch() lines
+          $buildFile = "$toolsLib\build_windows.dart"
+          $content = Get-Content $buildFile -Raw -Encoding UTF8
+          # Remove the two lines that add -A and x64 to cmake args
+          $content = $content -replace "        '-A',\r?\n        getCmakeWindowsArch\(targetPlatform\),\r?\n", ""
+          $content = $content -replace "        '-A',\n        getCmakeWindowsArch\(targetPlatform\),\n", ""
+          Set-Content $buildFile $content -Encoding UTF8 -NoNewline
+          Write-Host "Patched build_windows.dart"
+
+          # 3. Delete pre-compiled snapshot to force recompilation from patched source
+          $snapshot = "$env:FLUTTER_ROOT\bin\cache\flutter_tools.snapshot"
+          if (Test-Path $snapshot) {
+            Remove-Item $snapshot -Force
+            Write-Host "Deleted snapshot -> Flutter will recompile from source"
+          }
+
+          # Verify patches
+          Write-Host "--- visual_studio.dart cmakeGenerator ---"
+          Select-String -Path $vsFile -Pattern "Visual Studio|Ninja" | ForEach-Object { Write-Host $_.Line }
+          Write-Host "--- build_windows.dart around -A ---"
+          $lines = Get-Content $buildFile
+          $idx = ($lines | Select-String "-A").LineNumber
+          if ($idx) { $lines[($idx-3)..($idx+3)] | ForEach-Object { Write-Host $_ } }
+
+      - name: build Windows EXE (with recompiled flutter_tools)
         shell: pwsh
-        run: |
-          # Find cmake bundled with VS
-          $vsPath = (& "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath)
-          $cmake = "$vsPath\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe"
-          $ninja = "$vsPath\Common7\IDE\CommonExtensions\Microsoft\CMake\Ninja\ninja.exe"
-
-          Write-Host "cmake: $cmake"
-          Write-Host "ninja: $ninja"
-
-          # Add ninja to PATH
-          $ninjaDir = [System.IO.Path]::GetDirectoryName($ninja)
-          $env:PATH = "$ninjaDir;$env:PATH"
-
-          New-Item -Force -ItemType Directory "build\windows\x64" | Out-Null
-
-          # Configure: Ninja generator (no -A), MSVC compilers from PATH
-          & $cmake `
-            -S windows `
-            -B "build\windows\x64" `
-            -G "Ninja" `
-            -DCMAKE_BUILD_TYPE=Release `
-            -DFLUTTER_TARGET_PLATFORM=windows-x64 `
-            -DCMAKE_C_COMPILER=cl `
-            -DCMAKE_CXX_COMPILER=cl `
-            -DCMAKE_MAKE_PROGRAM="$ninja"
-
-          if ($LASTEXITCODE -ne 0) { Write-Error "cmake configure failed"; exit 1 }
-
-      - name: cmake build
-        shell: pwsh
-        run: |
-          $vsPath = (& "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath)
-          $cmake = "$vsPath\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe"
-          & $cmake --build "build\windows\x64" --config Release --parallel
-          if ($LASTEXITCODE -ne 0) { Write-Error "cmake build failed"; exit 1 }
-
-      # Copy Flutter engine DLLs to the output directory
-      - name: copy Flutter engine files
-        shell: pwsh
-        run: |
-          $outDir = "build\windows\x64\runner\Release"
-          if (-not (Test-Path $outDir)) {
-            $outDir = (Get-ChildItem -Recurse "build\windows\x64" -Filter "*.exe" |
-                       Where-Object { $_.Name -ne "cmake.exe" } |
-                       Select-Object -First 1).DirectoryName
-          }
-          Write-Host "Output dir: $outDir"
-
-          $engineDir = "$env:FLUTTER_ROOT\bin\cache\artifacts\engine\windows-x64-release"
-          if (-not (Test-Path $engineDir)) {
-            $engineDir = "$env:FLUTTER_ROOT\bin\cache\artifacts\engine\windows-x64"
-          }
-          Write-Host "Engine dir: $engineDir"
-
-          if (Test-Path $engineDir) {
-            Copy-Item "$engineDir\*.dll" $outDir -Force -ErrorAction SilentlyContinue
-            Write-Host "Copied engine DLLs"
-          }
-
-          # Copy data directory (Flutter assets)
-          $dataDir = "$outDir\data"
-          New-Item -Force -ItemType Directory $dataDir | Out-Null
-          if (Test-Path "build\flutter_assets") {
-            Copy-Item "build\flutter_assets\*" $dataDir -Recurse -Force -ErrorAction SilentlyContinue
-          }
-          if (Test-Path "build\windows\x64\runner\Release\data") {
-            Write-Host "Data dir already exists"
-          }
-
-          Get-ChildItem $outDir | Select-Object Name, Length
+        run: flutter build windows --release
 
       - name: zip output
         shell: pwsh
         run: |
-          $candidates = @(
+          $src = @(
             "build\windows\x64\runner\Release",
-            "build\windows\runner\Release",
-            "build\windows\x64\Release"
-          )
-          $src = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
-          if (-not $src) {
-            Write-Error "No output directory found"
-            Get-ChildItem -Recurse build\windows | Select-Object FullName | Head -20
-            exit 1
-          }
-          Write-Host "Zipping from: $src"
+            "build\windows\runner\Release"
+          ) | Where-Object { Test-Path $_ } | Select-Object -First 1
+          Write-Host "Zipping: $src"
           Compress-Archive -Path "$src\*" -DestinationPath "CloudGram-Windows.zip" -Force
-          Write-Host "Done: $([math]::Round((Get-Item 'CloudGram-Windows.zip').Length/1MB,1)) MB"
+          Write-Host "$([math]::Round((Get-Item 'CloudGram-Windows.zip').Length/1MB,1)) MB"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -299,7 +250,6 @@ jobs:
             | المنصة | الملف |
             |--------|-------|
             | 🤖 Android | app-arm64-v8a-release.apk |
-            | 🤖 Android | app-armeabi-v7a-release.apk |
             | 🍎 iOS Simulator | CloudGram-iOS-Simulator.zip |
             | 🍎 iOS Device | CloudGram-iOS-Device.ipa |
             | 🪟 Windows | CloudGram-Windows.zip |
