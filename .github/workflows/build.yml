@@ -186,9 +186,24 @@ jobs:
 
           Write-Host "All patches applied successfully" 
 
-      - name: build Windows EXE (with recompiled flutter_tools)
+      - name: build Windows EXE (dart run on patched source)
         shell: pwsh
-        run: flutter build windows --release
+        run: |
+          # Run dart directly on the patched flutter_tools source
+          # bypassing the cached/regenerated snapshot entirely
+          $dartSdk = "$env:FLUTTER_ROOT\bin\cache\dart-sdk\bin\dart.exe"
+          $flutterTools = "$env:FLUTTER_ROOT\packages\flutter_tools\bin\flutter_tools.dart"
+
+          Write-Host "dart: $dartSdk"
+          Write-Host "tools: $flutterTools"
+
+          # dart run needs pub deps resolved in flutter_tools
+          Push-Location "$env:FLUTTER_ROOT\packages\flutter_tools"
+          & $dartSdk pub get --no-precompile 2>&1 | Out-Null
+          Pop-Location
+
+          # Run build via dart (JIT, uses patched source directly)
+          & $dartSdk run $flutterTools build windows --release
 
       - name: zip output
         shell: pwsh
