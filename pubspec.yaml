@@ -20,7 +20,7 @@ dependencies:
   photo_manager: ^3.3.0
   permission_handler: ^11.3.0
 
-  # UI & Design
+  # UI
   flutter_staggered_grid_view: ^0.7.0
   shimmer: ^3.0.0
   cached_network_image: ^3.3.1
@@ -28,10 +28,10 @@ dependencies:
   google_fonts: ^6.2.1
   flutter_animate: ^4.5.0
 
-  # Media Player — إصدارات متوافقة مع Flutter 3.22
+  # Media Player — إصدارات مثبّتة بدقة لتجنب withValues()
   video_player: ^2.8.3
-  chewie: ^1.7.4          # آخر إصدار لا يستخدم withValues()
-  audioplayers: ^5.2.1    # إصدار مستقر
+  chewie: 1.7.4            # تثبيت دقيق — 1.8.x يستخدم Color.withValues() غير متوفرة في Flutter 3.22
+  audioplayers: 5.2.1      # تثبيت دقيق
   just_audio: ^0.9.39
 
   # Storage & State

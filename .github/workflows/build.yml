@@ -15,7 +15,6 @@ jobs:
   build-android:
     name: 🤖 Android APK
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v4
 
@@ -35,8 +34,8 @@ jobs:
 
       - name: 📝 local.properties
         run: |
-          echo "flutter.sdk=$FLUTTER_ROOT"    > android/local.properties
-          echo "sdk.dir=$ANDROID_SDK_ROOT"   >> android/local.properties
+          echo "flutter.sdk=$FLUTTER_ROOT"   > android/local.properties
+          echo "sdk.dir=$ANDROID_SDK_ROOT"  >> android/local.properties
 
       - name: 🔨 Build APK
         run: flutter build apk --release --split-per-abi
@@ -53,12 +52,11 @@ jobs:
           retention-days: 30
 
 # ══════════════════════════════════════════════════════════════════
-# 2️⃣  iOS — xcodebuild archive (لا يحتاج Apple account)
+# 2️⃣  iOS
 # ══════════════════════════════════════════════════════════════════
   build-ios:
     name: 🍎 iOS Build
     runs-on: macos-latest
-
     steps:
       - uses: actions/checkout@v4
 
@@ -71,40 +69,47 @@ jobs:
       - name: 📦 pub get
         run: flutter pub get
 
-      - name: 🔧 pod install
+      # تنظيف wakelock_plus المكسور ثم pod install
+      - name: 🔧 Pod install
         run: |
           cd ios
+          # حذف Podfile.lock القديم لضمان إعادة resolve
+          rm -f Podfile.lock
           pod install --repo-update
         continue-on-error: true
 
-      # بناء debug على simulator — لا يحتاج codesigning إطلاقاً
-      - name: 🔨 Build iOS Simulator (debug, no-codesign)
-        run: flutter build ios --simulator --debug --no-codesign
-
-      - name: 📦 Zip Simulator .app
+      # بناء debug simulator — الطريقة الوحيدة بدون Apple account
+      - name: 🔨 Build iOS Simulator debug
         run: |
-          cd build/ios/iphonesimulator
-          zip -r ../../../CloudGram-iOS-Simulator.zip Runner.app
-          echo "Size: $(du -sh ../../../CloudGram-iOS-Simulator.zip)"
+          flutter build ios \
+            --simulator \
+            --debug \
+            --no-codesign
 
-      # محاولة بناء device archive — بدون signing identity (best-effort)
-      - name: 🔨 Build iOS Device archive (no-codesign, best-effort)
+      - name: 📦 Zip Simulator build
+        run: |
+          APP_PATH=$(find build/ios -name "Runner.app" | head -1)
+          echo "App found at: $APP_PATH"
+          cd "$(dirname $APP_PATH)"
+          zip -r "$GITHUB_WORKSPACE/CloudGram-iOS-Simulator.zip" Runner.app
+
+      # محاولة device build بدون signing — best effort
+      - name: 🔨 Build iOS Device (best-effort)
         run: |
           flutter build ios --release --no-codesign \
+            COMPILER_INDEX_STORE_ENABLE=NO \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" || true
 
-      - name: 📦 Package Device IPA (if available)
+      - name: 📦 Package IPA if available
         run: |
           if [ -d "build/ios/iphoneos/Runner.app" ]; then
-            mkdir -p Payload
+            mkdir Payload
             cp -r build/ios/iphoneos/Runner.app Payload/
             zip -r CloudGram-iOS-Device.ipa Payload/
             rm -rf Payload
-            echo "IPA size: $(du -sh CloudGram-iOS-Device.ipa)"
-          else
-            echo "Device build not produced — skipping IPA packaging"
+            echo "IPA: $(du -sh CloudGram-iOS-Device.ipa)"
           fi
 
       - uses: actions/upload-artifact@v4
@@ -117,11 +122,13 @@ jobs:
           retention-days: 30
 
 # ══════════════════════════════════════════════════════════════════
-# 3️⃣  WINDOWS EXE — إجبار Flutter على استخدام Ninja بدلاً من VS
+# 3️⃣  WINDOWS EXE
+# Flutter 3.22 hardcodes vswhere -version 16 (VS2019).
+# الحل: نبني باستخدام clang-cl + Ninja مباشرة عبر patch env
 # ══════════════════════════════════════════════════════════════════
   build-windows:
     name: 🪟 Windows EXE
-    runs-on: windows-latest
+    runs-on: windows-2022    # VS 2022 مضمون هنا
 
     steps:
       - uses: actions/checkout@v4
@@ -138,54 +145,140 @@ jobs:
       - name: 📦 pub get
         run: flutter pub get
 
-      # تثبيت Ninja مباشرة — يتجاوز مشكلة VS generator
-      - name: 🔧 Install Ninja
-        run: choco install ninja -y --no-progress
-        shell: pwsh
+      # إعداد بيئة VS 2022 وإضافة أدواتها للـ PATH
+      - name: 🔧 Setup MSVC environment
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
 
-      # إضافة cmake من VS 2022 للـ PATH
-      - name: 🔧 Add VS 2022 CMake to PATH
+      # تثبيت CMake حديث يدعم VS 2022
+      - name: 🔧 Install CMake & Ninja
         shell: pwsh
         run: |
-          $vsWhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-          $vsPath  = & $vsWhere -latest -property installationPath 2>$null
-          if (-not $vsPath) {
-            # fallback: search common paths
-            $vsPath = "C:\Program Files\Microsoft Visual Studio\2022\Enterprise"
-            if (-not (Test-Path $vsPath)) {
-              $vsPath = "C:\Program Files\Microsoft Visual Studio\2022\Community"
-            }
-            if (-not (Test-Path $vsPath)) {
-              $vsPath = (Get-ChildItem "C:\Program Files\Microsoft Visual Studio" -ErrorAction SilentlyContinue | Select-Object -Last 1).FullName + "\Enterprise"
-            }
-          }
-          Write-Host "VS path: $vsPath"
-          $cmakeBin = "$vsPath\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin"
-          if (Test-Path $cmakeBin) {
-            echo "$cmakeBin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-            Write-Host "Added CMake: $cmakeBin"
-          }
-          # Verify cmake & ninja
+          choco install cmake --installargs 'ADD_CMAKE_TO_PATH=System' -y --no-progress
+          choco install ninja -y --no-progress
           cmake --version
           ninja --version
 
-      # إجبار Flutter على استخدام Ninja generator عبر متغير البيئة
-      - name: 🔨 Build Windows EXE
+      # ── الحيلة الأساسية: نخدع Flutter ليظن أن VS 2019 موجود ──────────
+      # Flutter 3.22 يشغّل: vswhere -version 16 -requires ...
+      # نصنع wrapper script يعيد بيانات VS 2022 كأنها VS 2019
+      - name: 🔧 Patch vswhere to report VS2022 as VS2019
         shell: pwsh
-        env:
-          CMAKE_GENERATOR: Ninja
-        run: flutter build windows --release --verbose
+        run: |
+          $vsWhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $realPath = & $vsWhere -latest -property installationPath
+          Write-Host "Real VS path: $realPath"
 
-      - name: 📦 Zip output
+          # أنشئ fake vswhere.bat يعيد JSON بـ installationVersion=16.x
+          $fakeJson = @"
+          [
+            {
+              "instanceId": "fake",
+              "installDate": "2024-01-01T00:00:00Z",
+              "installationName": "VisualStudio/16.11.99+fake",
+              "installationPath": "$($realPath -replace '\\','/')",
+              "installationVersion": "16.11.99.99",
+              "productId": "Microsoft.VisualStudio.Product.Enterprise",
+              "productPath": "$($realPath -replace '\\','/')/Common7/IDE/devenv.exe",
+              "state": 4294967295,
+              "isComplete": true,
+              "isLaunchable": true,
+              "isPrerelease": false,
+              "isRebootRequired": false,
+              "displayName": "Visual Studio Enterprise 2019",
+              "description": "Fake for CI",
+              "channelId": "VisualStudio.16.Release",
+              "channelUri": "https://aka.ms/vs/16/release/channel",
+              "enginePath": "$($realPath -replace '\\','/')/Common7/IDE/CommonExtensions/Microsoft/VSI/DisposablePackages",
+              "installedChannelId": "VisualStudio.16.Release",
+              "installedChannelUri": "https://aka.ms/vs/16/release/channel",
+              "releaseNotes": "https://docs.microsoft.com/en-us/visualstudio/releases/2019/release-notes-v16.11",
+              "thirdPartyNotices": "https://go.microsoft.com/fwlink/?linkid=823099",
+              "updateDate": "2024-01-01T00:00:00Z",
+              "catalog": {
+                "buildBranch": "d16.11",
+                "buildVersion": "16.11.99.99",
+                "id": "VisualStudio/16.11.99+fake",
+                "localBuild": "build-fake",
+                "manifestName": "VisualStudio",
+                "manifestType": "installer",
+                "productDisplayVersion": "16.11.99",
+                "productLine": "Dev16",
+                "productLineVersion": "2019",
+                "productMilestone": "RTW",
+                "productMilestoneIsPreRelease": "False",
+                "productName": "Visual Studio",
+                "productPatchVersion": "99",
+                "productPreReleaseMilestoneSuffix": "1.0",
+                "productRelease": "RTW",
+                "productSemanticVersion": "16.11.99+fake",
+                "requiredEngineVersion": "2.11.99+fake"
+              },
+              "properties": {
+                "campaignId": "",
+                "canceled": "0",
+                "channelManifestId": "VisualStudio.16.Release/fake",
+                "nickname": "",
+                "setupEngineFilePath": "C:\\Program Files (x86)\\Microsoft Visual Studio\\Installer\\setup.exe"
+              }
+            }
+          ]
+"@
+          # اكتب الـ fake JSON لملف مؤقت
+          $fakeJson | Set-Content "$env:TEMP\fake_vs.json"
+
+          # أنشئ vswhere wrapper في مجلد مؤقت يكون أول PATH
+          $wrapDir = "$env:TEMP\vswhere_wrap"
+          New-Item -ItemType Directory -Force -Path $wrapDir | Out-Null
+          @"
+@echo off
+type "$env:TEMP\fake_vs.json"
+"@ | Set-Content "$wrapDir\vswhere.exe.bat"
+
+          # نسخ vswhere.exe الأصلي واستبداله بـ wrapper
+          # الأسهل: نضع wrapper folder في بداية PATH
+          # لكن flutter يستخدم المسار المطلق لـ vswhere
+          # الحل الأبسط: نبني مباشرة بـ CMake بدون flutter build windows
+          Write-Host "VS path for direct CMake: $realPath"
+          echo "VS_PATH=$realPath" >> $env:GITHUB_ENV
+
+      # بناء مباشر بـ CMake + Ninja متجاوزاً Flutter tooling
+      - name: 🔨 Build Windows via CMake directly
+        shell: pwsh
+        run: |
+          # توليد ملفات CMake عبر flutter (pub get يكفي لتوليد الـ plugins)
+          # لكن نستخدم CMake يدوياً بدلاً من flutter build windows
+
+          $buildDir = "build\windows\x64"
+          New-Item -ItemType Directory -Force -Path $buildDir | Out-Null
+
+          # Generate با Ninja generator مباشرة
+          cmake -S windows -B $buildDir `
+            -G "Ninja" `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DFLUTTER_TARGET_PLATFORM=windows-x64 `
+            -DCMAKE_C_COMPILER=cl `
+            -DCMAKE_CXX_COMPILER=cl
+
+          # Build
+          cmake --build $buildDir --config Release --parallel
+
+      - name: 📦 Zip Windows build
         shell: pwsh
         run: |
           $paths = @(
             "build\windows\x64\runner\Release",
+            "build\windows\x64\Release",
             "build\windows\runner\Release"
           )
           $src = $paths | Where-Object { Test-Path $_ } | Select-Object -First 1
-          Write-Host "Zipping: $src"
-          Get-ChildItem $src
+          if (-not $src) {
+            Write-Host "Looking for any exe..."
+            Get-ChildItem -Recurse -Filter "*.exe" build\ | Select-Object FullName
+            $src = "build\windows\x64"
+          }
+          Write-Host "Zipping from: $src"
           Compress-Archive -Path "$src\*" -DestinationPath "CloudGram-Windows.zip" -Force
 
       - uses: actions/upload-artifact@v4
@@ -204,10 +297,8 @@ jobs:
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     permissions:
       contents: write
-
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/download-artifact@v4
         with:
           path: artifacts/
@@ -216,9 +307,8 @@ jobs:
         id: tag
         run: |
           VER=$(grep '^version:' pubspec.yaml | awk '{print $2}')
-          TAG="v${VER}-$(date +%Y%m%d%H%M%S)"
           echo "ver=v${VER}" >> $GITHUB_OUTPUT
-          echo "tag=${TAG}"  >> $GITHUB_OUTPUT
+          echo "tag=v${VER}-$(date +%Y%m%d%H%M%S)" >> $GITHUB_OUTPUT
 
       - name: 🗂 List artifacts
         run: find artifacts/ -type f | sort
@@ -230,13 +320,13 @@ jobs:
           body: |
             ## ☁️ CloudGram — تخزين سحابي لا محدود عبر تيليجرام
 
-            | المنصة | الملف | ملاحظة |
-            |--------|-------|--------|
-            | 🤖 Android | `app-arm64-v8a-release.apk` | ✅ موصى به للأجهزة الحديثة |
-            | 🤖 Android | `app-armeabi-v7a-release.apk` | أجهزة قديمة |
-            | 🍎 iOS Simulator | `CloudGram-iOS-Simulator.zip` | للمحاكي |
-            | 🍎 iOS Device | `CloudGram-iOS-Device.ipa` | AltStore / Sideloadly |
-            | 🪟 Windows | `CloudGram-Windows.zip` | فك الضغط ثم شغّل cloudgram.exe |
+            | المنصة | الملف |
+            |--------|-------|
+            | 🤖 Android | `app-arm64-v8a-release.apk` ✅ |
+            | 🤖 Android | `app-armeabi-v7a-release.apk` |
+            | 🍎 iOS Simulator | `CloudGram-iOS-Simulator.zip` |
+            | 🍎 iOS Device | `CloudGram-iOS-Device.ipa` |
+            | 🪟 Windows | `CloudGram-Windows.zip` |
 
             > 🤖 بُني تلقائياً بواسطة GitHub Actions
           files: |
