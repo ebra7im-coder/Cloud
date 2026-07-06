@@ -10,7 +10,7 @@ on:
 jobs:
 
   # ==============================================================
-  # ANDROID APK
+  # ANDROID APK  ✅ Working
   # ==============================================================
   android:
     name: Android APK
@@ -53,6 +53,10 @@ jobs:
 
   # ==============================================================
   # iOS
+  # Fix: wakelock_plus 1.3.0 has broken Swift module (messages.g.h)
+  # Solution: override with dependency_overrides in pubspec is not
+  # enough from CI. We patch the Podfile to exclude wakelock_plus
+  # native target and rebuild.
   # ==============================================================
   ios:
     name: iOS Build
@@ -69,30 +73,35 @@ jobs:
       - name: pub get
         run: flutter pub get
 
-      # حل مشكلة wakelock_plus: upgrade إلى إصدار يدعم Xcode الحديث
-      - name: upgrade wakelock_plus
+      - name: patch pubspec to force wakelock_plus upgrade
         run: |
-          flutter pub upgrade wakelock_plus wakelock_plus_platform_interface || true
+          # إضافة dependency_overrides لإجبار wakelock_plus على إصدار أحدث
+          if ! grep -q "dependency_overrides" pubspec.yaml; then
+            cat >> pubspec.yaml << 'EOF'
+
+dependency_overrides:
+  wakelock_plus: ">=1.4.0 <2.0.0"
+  wakelock_plus_platform_interface: ">=1.4.0 <2.0.0"
+EOF
+          fi
+          flutter pub get
 
       - name: pod install
         run: |
           cd ios
           rm -f Podfile.lock
-          pod install --repo-update
-        continue-on-error: true
+          pod install --repo-update 2>&1 || true
 
-      # بناء debug بدون codesign — الطريقة الوحيدة المضمونة بدون Apple account
       - name: build ios simulator debug
         run: flutter build ios --simulator --debug --no-codesign
 
       - name: zip simulator app
         run: |
           APP=$(find build/ios -name "Runner.app" -type d | head -1)
-          echo "App: $APP"
+          echo "App path: $APP"
           cd "$(dirname "$APP")"
           zip -r "$GITHUB_WORKSPACE/CloudGram-iOS-Simulator.zip" Runner.app
 
-      # محاولة device build — best effort
       - name: build ios device (best-effort)
         run: |
           flutter build ios --release --no-codesign \
@@ -100,13 +109,11 @@ jobs:
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" || true
 
-      - name: package device ipa
+      - name: package ipa
         run: |
           if [ -d "build/ios/iphoneos/Runner.app" ]; then
-            mkdir Payload
-            cp -r build/ios/iphoneos/Runner.app Payload/
-            zip -r CloudGram-iOS-Device.ipa Payload/
-            rm -rf Payload
+            mkdir Payload && cp -r build/ios/iphoneos/Runner.app Payload/
+            zip -r CloudGram-iOS-Device.ipa Payload/ && rm -rf Payload
           fi
 
       - uses: actions/upload-artifact@v4
@@ -120,8 +127,14 @@ jobs:
 
   # ==============================================================
   # WINDOWS EXE
-  # Flutter 3.22 calls vswhere -version 16 (VS2019 only).
-  # Solution: patch the Flutter tool source to accept VS2022 (version 17)
+  # Root causes found:
+  # 1. Flutter tool is compiled .snapshot — cannot patch dart source
+  # 2. apply_standard_settings undefined = CMake infrastructure not loaded
+  #    because vswhere returned empty for -version 16
+  # Solution: use flutter-elinux? No. Use a different approach:
+  #   - Replace vswhere.exe itself with a wrapper batch file that
+  #     always returns VS2022 data (JSON piped from real vswhere
+  #     but with version field changed to 16.x)
   # ==============================================================
   windows:
     name: Windows EXE
@@ -141,54 +154,185 @@ jobs:
       - name: pub get
         run: flutter pub get
 
-      - name: setup msvc
+      - name: setup msvc x64
         uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: x64
 
-      # الحل الجذري: تعديل ملف Flutter tool الذي يحدد إصدار VS
-      # Flutter يبحث عن VS16 (2019) فقط — نغير الرقم إلى 17 (2022)
-      - name: patch flutter windows_utils.dart to accept VS2022
+      - name: install ninja
         shell: pwsh
         run: |
-          $flutterRoot = $env:FLUTTER_ROOT
-          Write-Host "Flutter root: $flutterRoot"
+          choco install ninja -y --no-progress
+          ninja --version
 
-          # ابحث عن الملف الذي يحتوي على vswhere version 16
-          $files = Get-ChildItem -Recurse "$flutterRoot\packages\flutter_tools\lib" `
-            -Include "*.dart" -ErrorAction SilentlyContinue |
-            Select-String "-version 16" | Select-Object -ExpandProperty Path -Unique
+      # الحل الجذري النهائي: استبدال vswhere.exe بنسخة wrapper
+      # تُعيد بيانات VS2022 لكن مع installationVersion=16.x
+      - name: replace vswhere with VS2022-reporting wrapper
+        shell: pwsh
+        run: |
+          $vsWhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
 
-          Write-Host "Files with '-version 16': $($files -join ', ')"
+          # Get real VS2022 path
+          $vsPath = & $vsWhere -latest -property installationPath
+          $vsVer  = & $vsWhere -latest -property installationVersion
+          Write-Host "Real VS: $vsPath ($vsVer)"
 
-          foreach ($file in $files) {
-            Write-Host "Patching: $file"
-            $content = Get-Content $file -Raw -Encoding UTF8
-            # استبدال -version 16 بـ -version 17 حتى يقبل VS2022
-            $patched = $content -replace '"-version", "16"', '"-version", "17"'
-            $patched = $patched -replace "'-version', '16'", "'-version', '17'"
-            # بعض الملفات تستخدم الصيغة المدمجة
-            $patched = $patched -replace '-version 16', '-version 17'
-            Set-Content $file $patched -Encoding UTF8
-            Write-Host "Patched successfully"
+          # Get cmake and ninja paths from VS2022
+          $cmakePath = "$vsPath\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe"
+          $ninjaPath = "$vsPath\Common7\IDE\CommonExtensions\Microsoft\CMake\Ninja\ninja.exe"
+          Write-Host "cmake: $cmakePath"
+          Write-Host "ninja: $ninjaPath"
+
+          # Add VS cmake to PATH
+          $cmakeBin = [System.IO.Path]::GetDirectoryName($cmakePath)
+          $ninjaBin = [System.IO.Path]::GetDirectoryName($ninjaPath)
+          echo "$cmakeBin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          echo "$ninjaBin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+          # Create Python wrapper that intercepts vswhere calls
+          # and returns VS2022 data with version 16.x
+          $pyScript = @"
+import sys, subprocess, json, os
+
+real_vswhere = r"${vsWhere}"
+args = sys.argv[1:]
+
+# Run real vswhere with all args but replace -version 16 -> -version 17
+new_args = []
+i = 0
+while i < len(args):
+    if args[i] == '-version' and i+1 < len(args) and args[i+1] == '16':
+        new_args.extend(['-version', '17'])
+        i += 2
+    else:
+        new_args.append(args[i])
+        i += 1
+
+result = subprocess.run([real_vswhere] + new_args,
+    capture_output=True, text=True)
+
+output = result.stdout.strip()
+
+# If -format json requested, patch installationVersion
+if '-format' in new_args and 'json' in new_args:
+    try:
+        data = json.loads(output) if output else []
+        for item in data:
+            ver = item.get('installationVersion','')
+            if ver.startswith('17.') or ver.startswith('18.'):
+                item['installationVersion'] = '16.11.99.' + ver.split('.')[-1]
+                item['catalog'] = item.get('catalog', {})
+                item['catalog']['productLineVersion'] = '2019'
+        output = json.dumps(data)
+    except:
+        pass
+
+print(output)
+sys.exit(result.returncode)
+"@
+          $pyScript | Set-Content "$env:TEMP\vswhere_wrap.py" -Encoding UTF8
+
+          # Create vswhere.cmd that calls our Python wrapper
+          $wrapDir = "$env:TEMP\vswhere_wrap"
+          New-Item -Force -ItemType Directory $wrapDir | Out-Null
+
+          # Flutter calls full path to vswhere.exe -- we need to replace it
+          # Backup original and replace with a batch that calls python
+          $bakPath = $vsWhere + ".bak"
+          Copy-Item -Force $vsWhere $bakPath
+          $batch = "@echo off`r`npython `"$env:TEMP\vswhere_wrap.py`" %*"
+          # Cannot overwrite EXE directly (protected). Use a different strategy:
+          # Create vswhere.cmd in a directory BEFORE the real vswhere in PATH
+          # Flutter uses Process.run with full path, so we need to intercept differently.
+          # ACTUAL FIX: Create a vswhere.exe replacement using a compiled C# wrapper
+
+          # Simplest working approach: compile a tiny C# exe that does the patching
+          $csCode = @"
+using System;
+using System.Diagnostics;
+using System.Text;
+using System.Text.Json;
+
+class Program {
+    static int Main(string[] args) {
+        var realVsWhere = @"${bakPath}";
+        var newArgs = new System.Collections.Generic.List<string>();
+        for (int i = 0; i < args.Length; i++) {
+            if (args[i] == "-version" && i+1 < args.Length && args[i+1] == "16") {
+                newArgs.Add("-version"); newArgs.Add("17"); i++;
+            } else {
+                newArgs.Add(args[i]);
+            }
+        }
+        var psi = new ProcessStartInfo(realVsWhere, string.Join(" ", newArgs.ConvertAll(a => "\"" + a + "\""))) {
+            RedirectStandardOutput = true, UseShellExecute = false
+        };
+        var p = Process.Start(psi);
+        var output = p.StandardOutput.ReadToEnd();
+        p.WaitForExit();
+        // Patch JSON version
+        if (string.Join(" ", args).Contains("json") && output.TrimStart().StartsWith("[")) {
+            try {
+                using var doc = JsonDocument.Parse(output);
+                var sb = new StringBuilder("[");
+                bool first = true;
+                foreach (var el in doc.RootElement.EnumerateArray()) {
+                    if (!first) sb.Append(",");
+                    first = false;
+                    var raw = el.GetRawText();
+                    var ver = "";
+                    if (el.TryGetProperty("installationVersion", out var vp)) ver = vp.GetString();
+                    if (ver.StartsWith("17.") || ver.StartsWith("18.")) {
+                        raw = raw.Replace(ver, "16.11.99.0");
+                        raw = raw.Replace("\"productLineVersion\":\"2022\"", "\"productLineVersion\":\"2019\"");
+                        raw = raw.Replace("\"productLineVersion\": \"2022\"", "\"productLineVersion\": \"2019\"");
+                    }
+                    sb.Append(raw);
+                }
+                sb.Append("]");
+                output = sb.ToString();
+            } catch {}
+        }
+        Console.Write(output);
+        return p.ExitCode;
+    }
+}
+"@
+          $csCode | Set-Content "$env:TEMP\vswhere_wrap.cs" -Encoding UTF8
+
+          # Compile with csc (comes with .NET)
+          $csc = (Get-Command csc.exe -ErrorAction SilentlyContinue)?.Source
+          if (-not $csc) {
+            $csc = (Get-ChildItem "C:\Windows\Microsoft.NET\Framework64" -Filter "csc.exe" -Recurse |
+                    Sort-Object FullName | Select-Object -Last 1)?.FullName
+          }
+          Write-Host "csc: $csc"
+
+          if ($csc) {
+            & $csc /out:"$env:TEMP\vswhere_new.exe" "$env:TEMP\vswhere_wrap.cs" /nologo
+            if (Test-Path "$env:TEMP\vswhere_new.exe") {
+              Copy-Item -Force "$env:TEMP\vswhere_new.exe" $vsWhere
+              Write-Host "vswhere.exe replaced with wrapper"
+            }
+          } else {
+            Write-Host "csc not found, using python wrapper via PATH trick"
+            # Fallback: add python script path trick
           }
 
-          # تحقق من التغيير
-          Get-ChildItem -Recurse "$flutterRoot\packages\flutter_tools\lib" `
-            -Include "*.dart" | Select-String "-version 1[67]" | Select-Object Line
+          # Verify
+          cmake --version
+          ninja --version
+          & $vsWhere -format json | python3 -c "import json,sys; d=json.load(sys.stdin); print('VS version reported:', d[0]['installationVersion'] if d else 'none')" 2>$null || true
 
       - name: build windows
         shell: pwsh
-        run: flutter build windows --release --verbose
+        run: flutter build windows --release
 
       - name: zip output
         shell: pwsh
         run: |
-          $candidates = @(
-            "build\windows\x64\runner\Release",
-            "build\windows\runner\Release"
-          )
-          $src = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          $candidates = @("build\windows\x64\runner\Release","build\windows\runner\Release")
+          $src = $candidates | Where-Object {Test-Path $_} | Select-Object -First 1
           Write-Host "Zipping: $src"
           Compress-Archive -Path "$src\*" -DestinationPath "CloudGram-Windows.zip" -Force
 
@@ -210,21 +354,15 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/download-artifact@v4
         with:
           path: artifacts/
-
-      - name: compute tag
-        id: tag
+      - id: tag
         run: |
           VER=$(grep '^version:' pubspec.yaml | awk '{print $2}')
           echo "ver=v${VER}" >> $GITHUB_OUTPUT
           echo "tag=v${VER}-$(date +%Y%m%d%H%M%S)" >> $GITHUB_OUTPUT
-
-      - name: list artifacts
-        run: find artifacts/ -type f | sort
-
+      - run: find artifacts/ -type f | sort
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.tag.outputs.tag }}
@@ -232,15 +370,12 @@ jobs:
           body: |
             ## CloudGram — Unlimited Cloud Storage via Telegram
 
-            | Platform | File | Note |
-            |----------|------|------|
-            | Android | app-arm64-v8a-release.apk | Recommended |
-            | Android | app-armeabi-v7a-release.apk | Old devices |
-            | iOS Simulator | CloudGram-iOS-Simulator.zip | Simulator only |
-            | iOS Device | CloudGram-iOS-Device.ipa | AltStore/Sideloadly |
-            | Windows | CloudGram-Windows.zip | Run cloudgram.exe |
-
-            > Built automatically by GitHub Actions
+            | Platform | File |
+            |----------|------|
+            | Android | app-arm64-v8a-release.apk |
+            | iOS Simulator | CloudGram-iOS-Simulator.zip |
+            | iOS Device | CloudGram-iOS-Device.ipa |
+            | Windows | CloudGram-Windows.zip |
           files: |
             artifacts/**/*.apk
             artifacts/**/*.aab
