@@ -10,7 +10,7 @@ on:
 jobs:
 
   # ============================================================
-  # ANDROID APK
+  # ANDROID APK  ✅ Working
   # ============================================================
   android:
     name: Android APK
@@ -29,7 +29,7 @@ jobs:
           channel: stable
           cache: true
 
-      - name: flutter pub get
+      - name: pub get
         run: flutter pub get
 
       - name: create asset dirs
@@ -56,6 +56,8 @@ jobs:
 
   # ============================================================
   # iOS
+  # Fix: Main.storyboard must NOT have customClass on any VC
+  # when used as launch screen (Xcode 16 error [12])
   # ============================================================
   ios:
     name: iOS Build
@@ -69,7 +71,7 @@ jobs:
           channel: stable
           cache: true
 
-      - name: flutter pub get
+      - name: pub get
         run: flutter pub get
 
       - name: create asset dirs
@@ -118,9 +120,9 @@ jobs:
 
   # ============================================================
   # WINDOWS EXE
-  # Flutter 3.27.4 still hardcodes CMake generator "Visual Studio 16 2019"
-  # Fix: set environment variable CMAKE_GENERATOR before flutter build
-  # This overrides Flutter's CMake generator selection.
+  # Flutter snapshot hardcodes "Visual Studio 16 2019".
+  # Fix: binary-patch the snapshot file to say "Visual Studio 17 2022"
+  # Both strings are 21 chars so in-place replacement is safe.
   # ============================================================
   windows:
     name: Windows EXE
@@ -137,7 +139,7 @@ jobs:
       - name: enable windows desktop
         run: flutter config --enable-windows-desktop
 
-      - name: flutter pub get
+      - name: pub get
         run: flutter pub get
 
       - name: create asset dirs
@@ -149,16 +151,34 @@ jobs:
         with:
           arch: x64
 
-      - name: install Ninja
+      - name: patch Flutter snapshot VS2019 -> VS2022
         shell: pwsh
-        run: choco install ninja -y --no-progress
+        run: |
+          $snapshot = "$env:FLUTTER_ROOT\bin\cache\flutter_tools.snapshot"
+          Write-Host "Snapshot: $snapshot  Exists: $(Test-Path $snapshot)"
+
+          $old = [System.Text.Encoding]::UTF8.GetBytes("Visual Studio 16 2019")
+          $new = [System.Text.Encoding]::UTF8.GetBytes("Visual Studio 17 2022")
+
+          $bytes = [System.IO.File]::ReadAllBytes($snapshot)
+          $count = 0
+          for ($i = 0; $i -le $bytes.Length - $old.Length; $i++) {
+            $match = $true
+            for ($j = 0; $j -lt $old.Length; $j++) {
+              if ($bytes[$i+$j] -ne $old[$j]) { $match = $false; break }
+            }
+            if ($match) {
+              for ($j = 0; $j -lt $new.Length; $j++) { $bytes[$i+$j] = $new[$j] }
+              $count++
+              Write-Host "Patched at offset $i"
+            }
+          }
+          [System.IO.File]::WriteAllBytes($snapshot, $bytes)
+          Write-Host "Total patches: $count"
+          if ($count -eq 0) { Write-Warning "Nothing patched — may fail" }
 
       - name: build Windows EXE
         shell: pwsh
-        env:
-          CMAKE_GENERATOR: "Ninja"
-          CC: cl
-          CXX: cl
         run: flutter build windows --release
 
       - name: zip output
