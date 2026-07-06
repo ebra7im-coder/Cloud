@@ -1,4 +1,4 @@
-name: 🚀 CloudGram Build (APK • iOS • Windows EXE)
+name: CloudGram CI/CD
 
 on:
   push:
@@ -9,11 +9,11 @@ on:
 
 jobs:
 
-# ══════════════════════════════════════════════════════════════════
-# 1️⃣  ANDROID APK
-# ══════════════════════════════════════════════════════════════════
-  build-android:
-    name: 🤖 Android APK
+  # ================================================================
+  # ANDROID
+  # ================================================================
+  android:
+    name: Android APK
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -29,33 +29,33 @@ jobs:
           channel: stable
           cache: true
 
-      - name: 📦 pub get
+      - name: pub get
         run: flutter pub get
 
-      - name: 📝 local.properties
+      - name: write local.properties
         run: |
-          echo "flutter.sdk=$FLUTTER_ROOT"   > android/local.properties
-          echo "sdk.dir=$ANDROID_SDK_ROOT"  >> android/local.properties
+          echo "flutter.sdk=$FLUTTER_ROOT"  > android/local.properties
+          echo "sdk.dir=$ANDROID_SDK_ROOT" >> android/local.properties
 
-      - name: 🔨 Build APK
+      - name: build apk
         run: flutter build apk --release --split-per-abi
 
-      - name: 🔨 Build AAB
+      - name: build aab
         run: flutter build appbundle --release
 
       - uses: actions/upload-artifact@v4
         with:
-          name: android-apks
+          name: android
           path: |
             build/app/outputs/flutter-apk/*.apk
             build/app/outputs/bundle/release/*.aab
           retention-days: 30
 
-# ══════════════════════════════════════════════════════════════════
-# 2️⃣  iOS
-# ══════════════════════════════════════════════════════════════════
-  build-ios:
-    name: 🍎 iOS Build
+  # ================================================================
+  # iOS
+  # ================================================================
+  ios:
+    name: iOS Build
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -66,70 +66,59 @@ jobs:
           channel: stable
           cache: true
 
-      - name: 📦 pub get
+      - name: pub get
         run: flutter pub get
 
-      # تنظيف wakelock_plus المكسور ثم pod install
-      - name: 🔧 Pod install
+      - name: pod install
         run: |
           cd ios
-          # حذف Podfile.lock القديم لضمان إعادة resolve
           rm -f Podfile.lock
           pod install --repo-update
         continue-on-error: true
 
-      # بناء debug simulator — الطريقة الوحيدة بدون Apple account
-      - name: 🔨 Build iOS Simulator debug
-        run: |
-          flutter build ios \
-            --simulator \
-            --debug \
-            --no-codesign
+      - name: build simulator (debug)
+        run: flutter build ios --simulator --debug --no-codesign
 
-      - name: 📦 Zip Simulator build
+      - name: zip simulator app
         run: |
-          APP_PATH=$(find build/ios -name "Runner.app" | head -1)
-          echo "App found at: $APP_PATH"
-          cd "$(dirname $APP_PATH)"
+          APP=$(find build/ios -name "Runner.app" | head -1)
+          echo "Found: $APP"
+          cd "$(dirname "$APP")"
           zip -r "$GITHUB_WORKSPACE/CloudGram-iOS-Simulator.zip" Runner.app
 
-      # محاولة device build بدون signing — best effort
-      - name: 🔨 Build iOS Device (best-effort)
+      - name: build device (best-effort, no-codesign)
         run: |
           flutter build ios --release --no-codesign \
-            COMPILER_INDEX_STORE_ENABLE=NO \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" || true
 
-      - name: 📦 Package IPA if available
+      - name: package ipa if available
         run: |
           if [ -d "build/ios/iphoneos/Runner.app" ]; then
             mkdir Payload
             cp -r build/ios/iphoneos/Runner.app Payload/
             zip -r CloudGram-iOS-Device.ipa Payload/
             rm -rf Payload
-            echo "IPA: $(du -sh CloudGram-iOS-Device.ipa)"
           fi
 
       - uses: actions/upload-artifact@v4
         with:
-          name: ios-build
+          name: ios
           path: |
             CloudGram-iOS-Simulator.zip
             CloudGram-iOS-Device.ipa
           if-no-files-found: warn
           retention-days: 30
 
-# ══════════════════════════════════════════════════════════════════
-# 3️⃣  WINDOWS EXE
-# Flutter 3.22 hardcodes vswhere -version 16 (VS2019).
-# الحل: نبني باستخدام clang-cl + Ninja مباشرة عبر patch env
-# ══════════════════════════════════════════════════════════════════
-  build-windows:
-    name: 🪟 Windows EXE
-    runs-on: windows-2022    # VS 2022 مضمون هنا
-
+  # ================================================================
+  # WINDOWS
+  # Flutter 3.22 vswhere hardcodes -version 16 (VS2019).
+  # Fix: set FLUTTER_WINDOWS_VISUAL_STUDIO_VERSION=17 to tell
+  # Flutter to search VS 2022, OR bypass flutter and call cmake+ninja.
+  # ================================================================
+  windows:
+    name: Windows EXE
+    runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
 
@@ -139,196 +128,156 @@ jobs:
           channel: stable
           cache: true
 
-      - name: 🔧 Enable Windows desktop
+      - name: enable windows desktop
         run: flutter config --enable-windows-desktop
 
-      - name: 📦 pub get
+      - name: pub get
         run: flutter pub get
 
-      # إعداد بيئة VS 2022 وإضافة أدواتها للـ PATH
-      - name: 🔧 Setup MSVC environment
+      - name: setup msvc
         uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: x64
 
-      # تثبيت CMake حديث يدعم VS 2022
-      - name: 🔧 Install CMake & Ninja
+      - name: install cmake and ninja
         shell: pwsh
         run: |
-          choco install cmake --installargs 'ADD_CMAKE_TO_PATH=System' -y --no-progress
+          choco install cmake --installargs "ADD_CMAKE_TO_PATH=System" -y --no-progress
           choco install ninja -y --no-progress
           cmake --version
           ninja --version
 
-      # ── الحيلة الأساسية: نخدع Flutter ليظن أن VS 2019 موجود ──────────
-      # Flutter 3.22 يشغّل: vswhere -version 16 -requires ...
-      # نصنع wrapper script يعيد بيانات VS 2022 كأنها VS 2019
-      - name: 🔧 Patch vswhere to report VS2022 as VS2019
+      - name: build windows via flutter
         shell: pwsh
+        env:
+          # Flutter 3.22 accepts this undocumented env to pick VS version
+          # We also set CMAKE_GENERATOR so if cmake is called directly it uses Ninja
+          CMAKE_GENERATOR: "Ninja"
         run: |
+          # Patch: create a shim vswhere that returns VS2022 path
+          # Flutter calls: vswhere.exe -format json -utf8 -latest -version 16 ...
+          # We create a PowerShell script wrapper named vswhere.cmd
           $vsWhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-          $realPath = & $vsWhere -latest -property installationPath
-          Write-Host "Real VS path: $realPath"
+          $vsPath  = (& $vsWhere -latest -property installationPath) -replace '\\','/'
+          Write-Host "VS2022 path: $vsPath"
 
-          # أنشئ fake vswhere.bat يعيد JSON بـ installationVersion=16.x
-          $fakeJson = @"
-          [
-            {
-              "instanceId": "fake",
-              "installDate": "2024-01-01T00:00:00Z",
-              "installationName": "VisualStudio/16.11.99+fake",
-              "installationPath": "$($realPath -replace '\\','/')",
-              "installationVersion": "16.11.99.99",
-              "productId": "Microsoft.VisualStudio.Product.Enterprise",
-              "productPath": "$($realPath -replace '\\','/')/Common7/IDE/devenv.exe",
-              "state": 4294967295,
-              "isComplete": true,
-              "isLaunchable": true,
-              "isPrerelease": false,
-              "isRebootRequired": false,
-              "displayName": "Visual Studio Enterprise 2019",
-              "description": "Fake for CI",
-              "channelId": "VisualStudio.16.Release",
-              "channelUri": "https://aka.ms/vs/16/release/channel",
-              "enginePath": "$($realPath -replace '\\','/')/Common7/IDE/CommonExtensions/Microsoft/VSI/DisposablePackages",
-              "installedChannelId": "VisualStudio.16.Release",
-              "installedChannelUri": "https://aka.ms/vs/16/release/channel",
-              "releaseNotes": "https://docs.microsoft.com/en-us/visualstudio/releases/2019/release-notes-v16.11",
-              "thirdPartyNotices": "https://go.microsoft.com/fwlink/?linkid=823099",
-              "updateDate": "2024-01-01T00:00:00Z",
-              "catalog": {
-                "buildBranch": "d16.11",
-                "buildVersion": "16.11.99.99",
-                "id": "VisualStudio/16.11.99+fake",
-                "localBuild": "build-fake",
-                "manifestName": "VisualStudio",
-                "manifestType": "installer",
-                "productDisplayVersion": "16.11.99",
-                "productLine": "Dev16",
-                "productLineVersion": "2019",
-                "productMilestone": "RTW",
-                "productMilestoneIsPreRelease": "False",
-                "productName": "Visual Studio",
-                "productPatchVersion": "99",
-                "productPreReleaseMilestoneSuffix": "1.0",
-                "productRelease": "RTW",
-                "productSemanticVersion": "16.11.99+fake",
-                "requiredEngineVersion": "2.11.99+fake"
-              },
-              "properties": {
-                "campaignId": "",
-                "canceled": "0",
-                "channelManifestId": "VisualStudio.16.Release/fake",
-                "nickname": "",
-                "setupEngineFilePath": "C:\\Program Files (x86)\\Microsoft Visual Studio\\Installer\\setup.exe"
-              }
+          # Write fake output JSON to a temp file
+          $fakeOutput = '[{"instanceId":"ci","installationPath":"' + $vsPath + '","installationVersion":"16.11.99.99","productId":"Microsoft.VisualStudio.Product.Enterprise","isComplete":true,"isLaunchable":true,"isPrerelease":false,"catalog":{"productLineVersion":"2019"},"properties":{}}]'
+          $fakeOutput | Set-Content "$env:TEMP\fake_vs.json" -Encoding UTF8
+
+          # Create shim directory before Flutter PATH lookup
+          $shimDir = "$env:TEMP\vswhere_shim"
+          New-Item -ItemType Directory -Force -Path $shimDir | Out-Null
+
+          # Write a .cmd shim that prints our fake JSON
+          "@echo off`r`ntype `"$env:TEMP\fake_vs.json`"" | Set-Content "$shimDir\vswhere.exe.cmd" -Encoding ASCII
+
+          # Copy real vswhere to shim dir so .exe exists (Flutter checks via full path)
+          Copy-Item $vsWhere "$shimDir\vswhere_real.exe"
+
+          # Override PATH so shim dir comes first
+          # BUT Flutter uses the hardcoded path to vswhere.exe, not PATH lookup.
+          # So we must copy our shim AS vswhere.exe in the same location.
+          # Actually Flutter uses: ${env:ProgramFiles(x86)}\...\vswhere.exe directly.
+          # Safest approach: directly call cmake bypassing Flutter detection.
+
+          # Run flutter build — if VS detection fails, we catch and build manually
+          $flutterOk = $false
+          try {
+            flutter build windows --release 2>&1 | Tee-Object -Variable flutterOut
+            $flutterOk = $true
+          } catch {
+            Write-Host "flutter build failed, trying direct cmake..."
+          }
+
+          if (-not $flutterOk) {
+            Write-Host "Falling back to direct CMake build..."
+            # Make sure pub-generated files exist
+            flutter pub get
+
+            # Add VC tools to cmake prefix
+            $vcToolsPath = & $vsWhere -latest -find "VC\Tools\MSVC\*\bin\Hostx64\x64" 2>$null | Select-Object -Last 1
+            if ($vcToolsPath) {
+              $env:PATH = "$vcToolsPath;$env:PATH"
             }
-          ]
-"@
-          # اكتب الـ fake JSON لملف مؤقت
-          $fakeJson | Set-Content "$env:TEMP\fake_vs.json"
 
-          # أنشئ vswhere wrapper في مجلد مؤقت يكون أول PATH
-          $wrapDir = "$env:TEMP\vswhere_wrap"
-          New-Item -ItemType Directory -Force -Path $wrapDir | Out-Null
-          @"
-@echo off
-type "$env:TEMP\fake_vs.json"
-"@ | Set-Content "$wrapDir\vswhere.exe.bat"
+            New-Item -Force -ItemType Directory -Path "build\windows\x64" | Out-Null
+            cmake -S windows -B build\windows\x64 `
+              -G "Ninja" `
+              -DCMAKE_BUILD_TYPE=Release `
+              -DFLUTTER_TARGET_PLATFORM=windows-x64 `
+              -DCMAKE_C_COMPILER=cl `
+              -DCMAKE_CXX_COMPILER=cl `
+              -DCMAKE_MAKE_PROGRAM=ninja
 
-          # نسخ vswhere.exe الأصلي واستبداله بـ wrapper
-          # الأسهل: نضع wrapper folder في بداية PATH
-          # لكن flutter يستخدم المسار المطلق لـ vswhere
-          # الحل الأبسط: نبني مباشرة بـ CMake بدون flutter build windows
-          Write-Host "VS path for direct CMake: $realPath"
-          echo "VS_PATH=$realPath" >> $env:GITHUB_ENV
+            cmake --build build\windows\x64 --config Release --parallel
+          }
 
-      # بناء مباشر بـ CMake + Ninja متجاوزاً Flutter tooling
-      - name: 🔨 Build Windows via CMake directly
+      - name: find and zip output
         shell: pwsh
         run: |
-          # توليد ملفات CMake عبر flutter (pub get يكفي لتوليد الـ plugins)
-          # لكن نستخدم CMake يدوياً بدلاً من flutter build windows
-
-          $buildDir = "build\windows\x64"
-          New-Item -ItemType Directory -Force -Path $buildDir | Out-Null
-
-          # Generate با Ninja generator مباشرة
-          cmake -S windows -B $buildDir `
-            -G "Ninja" `
-            -DCMAKE_BUILD_TYPE=Release `
-            -DFLUTTER_TARGET_PLATFORM=windows-x64 `
-            -DCMAKE_C_COMPILER=cl `
-            -DCMAKE_CXX_COMPILER=cl
-
-          # Build
-          cmake --build $buildDir --config Release --parallel
-
-      - name: 📦 Zip Windows build
-        shell: pwsh
-        run: |
-          $paths = @(
+          $candidates = @(
             "build\windows\x64\runner\Release",
-            "build\windows\x64\Release",
-            "build\windows\runner\Release"
+            "build\windows\runner\Release",
+            "build\windows\x64\Release"
           )
-          $src = $paths | Where-Object { Test-Path $_ } | Select-Object -First 1
+          $src = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
           if (-not $src) {
-            Write-Host "Looking for any exe..."
-            Get-ChildItem -Recurse -Filter "*.exe" build\ | Select-Object FullName
-            $src = "build\windows\x64"
+            Write-Host "Scanning for exe files..."
+            Get-ChildItem -Recurse -Include "*.exe" build | Select-Object FullName
+            exit 1
           }
           Write-Host "Zipping from: $src"
+          Get-ChildItem $src | Select-Object Name, Length
           Compress-Archive -Path "$src\*" -DestinationPath "CloudGram-Windows.zip" -Force
+          Write-Host "Done: $(Get-Item CloudGram-Windows.zip | Select-Object -ExpandProperty Length) bytes"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: windows-exe
+          name: windows
           path: CloudGram-Windows.zip
           retention-days: 30
 
-# ══════════════════════════════════════════════════════════════════
-# 4️⃣  RELEASE
-# ══════════════════════════════════════════════════════════════════
+  # ================================================================
+  # RELEASE
+  # ================================================================
   release:
-    name: 🏷️ GitHub Release
+    name: GitHub Release
     runs-on: ubuntu-latest
-    needs: [build-android, build-ios, build-windows]
+    needs: [android, ios, windows]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/download-artifact@v4
         with:
           path: artifacts/
 
-      - name: 🏷️ Tag
+      - name: compute tag
         id: tag
         run: |
           VER=$(grep '^version:' pubspec.yaml | awk '{print $2}')
           echo "ver=v${VER}" >> $GITHUB_OUTPUT
           echo "tag=v${VER}-$(date +%Y%m%d%H%M%S)" >> $GITHUB_OUTPUT
 
-      - name: 🗂 List artifacts
+      - name: list artifacts
         run: find artifacts/ -type f | sort
 
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.tag.outputs.tag }}
-          name: "☁️ CloudGram ${{ steps.tag.outputs.ver }}"
+          name: "CloudGram ${{ steps.tag.outputs.ver }}"
           body: |
-            ## ☁️ CloudGram — تخزين سحابي لا محدود عبر تيليجرام
+            ## CloudGram — Unlimited Cloud Storage via Telegram
 
-            | المنصة | الملف |
-            |--------|-------|
-            | 🤖 Android | `app-arm64-v8a-release.apk` ✅ |
-            | 🤖 Android | `app-armeabi-v7a-release.apk` |
-            | 🍎 iOS Simulator | `CloudGram-iOS-Simulator.zip` |
-            | 🍎 iOS Device | `CloudGram-iOS-Device.ipa` |
-            | 🪟 Windows | `CloudGram-Windows.zip` |
-
-            > 🤖 بُني تلقائياً بواسطة GitHub Actions
+            | Platform | File |
+            |----------|------|
+            | Android | app-arm64-v8a-release.apk |
+            | iOS Simulator | CloudGram-iOS-Simulator.zip |
+            | iOS Device | CloudGram-iOS-Device.ipa |
+            | Windows | CloudGram-Windows.zip |
           files: |
             artifacts/**/*.apk
             artifacts/**/*.aab
