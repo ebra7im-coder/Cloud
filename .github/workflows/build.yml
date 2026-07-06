@@ -151,47 +151,45 @@ jobs:
         with:
           arch: x64
 
-      - name: patch Flutter snapshot to use Ninja generator
-        shell: pwsh
+      - name: patch Flutter snapshot and build Windows
+        shell: python
         run: |
-          $snapshot = "$env:FLUTTER_ROOT\bin\cache\flutter_tools.snapshot"
-          Write-Host "Snapshot: $snapshot"
+          import subprocess, sys, os
 
-          # Patch "Visual Studio 16 2019" -> "Ninja              " (same 21 bytes)
-          # "Ninja" = 5 chars, pad to 21 with spaces so binary layout preserved
-          $old = [System.Text.Encoding]::UTF8.GetBytes("Visual Studio 16 2019")
-          $newStr = "Ninja" + " " * ($old.Length - 5)
-          $new = [System.Text.Encoding]::UTF8.GetBytes($newStr)
+          snapshot = os.path.join(os.environ['FLUTTER_ROOT'],
+                                  'bin', 'cache', 'flutter_tools.snapshot')
+          print(f"Snapshot: {snapshot}")
 
-          $bytes = [System.IO.File]::ReadAllBytes($snapshot)
-          $count = 0
-          for ($i = 0; $i -le $bytes.Length - $old.Length; $i++) {
-            $m = $true
-            for ($j = 0; $j -lt $old.Length; $j++) { if ($bytes[$i+$j] -ne $old[$j]) { $m = $false; break } }
-            if ($m) {
-              for ($j = 0; $j -lt $new.Length; $j++) { $bytes[$i+$j] = $new[$j] }
-              $count++
-              Write-Host "Patched at offset $i"
-            }
-          }
-          [System.IO.File]::WriteAllBytes($snapshot, $bytes)
-          Write-Host "Patches applied: $count"
+          data = open(snapshot, 'rb').read()
 
-          # Also patch "-A x64" argument that only applies to VS generators
-          # Find "-A" followed by "x64" near the old location and remove them
-          # (Ninja doesn't use -A flag)
-          $dashA  = [System.Text.Encoding]::UTF8.GetBytes('"-A"')
-          $bytes2 = [System.IO.File]::ReadAllBytes($snapshot)
-          # We'll handle this by passing -DCMAKE_SYSTEM_PROCESSOR instead
-          # No further patching needed — Ninja ignores -A gracefully
-          Write-Host "Done patching"
+          def patch(buf, old, new):
+            old_b = old.encode(); new_b = new.encode()
+            count = 0; i = 0
+            while i <= len(buf) - len(old_b):
+              if buf[i:i+len(old_b)] == old_b:
+                # Replace with new, keep same length using null padding
+                repl = new_b[:len(old_b)].ljust(len(old_b), b'\x00')
+                buf = buf[:i] + repl + buf[i+len(old_b):]
+                print(f"  Patched '{old}' -> '{new}' at {i}")
+                count += 1
+              i += 1
+            return buf, count
 
-      - name: build Windows EXE
-        shell: pwsh
-        run: |
-          # Ninja is already on PATH via ilammy/msvc-dev-cmd (bundled with VS)
-          # MSVC compiler (cl.exe) is on PATH via ilammy/msvc-dev-cmd
-          flutter build windows --release
+          data, c1 = patch(data, 'Visual Studio 16 2019', 'Ninja')
+          print(f"Generator patches: {c1}")
+
+          # Remove -A x64 (Visual Studio arch flag, invalid for Ninja)
+          data, c2 = patch(data, '"-A"', '""  ')
+          data, c3 = patch(data, '"x64"', '"   "')
+          print(f"Arch flag patches: c2={c2}, c3={c3}")
+
+          open(snapshot, 'wb').write(data)
+          print("Snapshot patched successfully")
+
+          # Now run flutter build
+          r = subprocess.run(['flutter', 'build', 'windows', '--release'],
+                             shell=False)
+          sys.exit(r.returncode)
 
       - name: zip output
         shell: pwsh
