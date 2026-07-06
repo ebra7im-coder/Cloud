@@ -257,21 +257,17 @@ jobs:
           }
           Write-Host "Cache cleared — Flutter will JIT from patched source"
 
-      - name: cmake configure (via flutter)
+      - name: cmake configure and ninja build
         shell: pwsh
         run: |
-          # Run flutter build to do cmake configure only (will fail at build, that's OK)
-          # We capture cmake output and then patch ninja files
-          # Use a timeout-based approach: run cmake directly
           $vsPath = (& "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath)
           $cmake = "$vsPath\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe"
           $ninja = "$vsPath\Common7\IDE\CommonExtensions\Microsoft\CMake\Ninja\ninja.exe"
+          $ninjaDir = [System.IO.Path]::GetDirectoryName($ninja)
+          $env:PATH = "$ninjaDir;$env:PATH"
 
           Write-Host "cmake: $cmake"
           Write-Host "ninja: $ninja"
-
-          # Add ninja to PATH
-          $env:PATH = [System.IO.Path]::GetDirectoryName($ninja) + ";" + $env:PATH
 
           # Run cmake configure
           $buildDir = "build\windows\x64"
@@ -282,29 +278,30 @@ jobs:
             -DCMAKE_C_COMPILER=cl `
             -DCMAKE_CXX_COMPILER=cl `
             -DCMAKE_MAKE_PROGRAM="$ninja"
-          Write-Host "cmake configure exit: $LASTEXITCODE"
+
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "cmake configure failed (exit $LASTEXITCODE)"
+            exit 1
+          }
+          Write-Host "cmake configure OK"
 
           # Patch ALL build.ninja files: fix /wd"4100" -> /wd4100
-          Get-ChildItem -Recurse $buildDir -Filter "*.ninja" | ForEach-Object {
-            $txt = Get-Content $_.FullName -Raw -Encoding UTF8
+          $ninjaFiles = Get-ChildItem -Recurse $buildDir -Filter "*.ninja"
+          foreach ($f in $ninjaFiles) {
+            $txt = Get-Content $f.FullName -Raw -Encoding UTF8
             if ($txt -match '/wd\"') {
               $patched = $txt -replace '/wd\"(\d+)\"', '/wd$1'
-              Set-Content $_.FullName $patched -Encoding UTF8 -NoNewline
-              Write-Host "Patched: $($_.FullName)"
+              Set-Content $f.FullName $patched -Encoding UTF8 -NoNewline
+              Write-Host "Patched: $($f.Name)"
             }
           }
-          Write-Host "Ninja files patched"
 
-      - name: ninja build
-        shell: pwsh
-        run: |
-          $vsPath = (& "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath)
-          $ninja = "$vsPath\Common7\IDE\CommonExtensions\Microsoft\CMake\Ninja\ninja.exe"
-          $env:PATH = [System.IO.Path]::GetDirectoryName($ninja) + ";" + $env:PATH
-
-          Set-Location "build\windows\x64"
+          # Ninja build
+          Push-Location $buildDir
           & $ninja -j 4
-          if ($LASTEXITCODE -ne 0) { Write-Error "ninja build failed"; exit 1 }
+          $exitCode = $LASTEXITCODE
+          Pop-Location
+          if ($exitCode -ne 0) { Write-Error "ninja build failed"; exit 1 }
           Write-Host "Build successful!"
 
       - name: zip output
