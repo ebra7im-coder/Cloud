@@ -9,9 +9,9 @@ on:
 
 jobs:
 
-  # ================================================================
-  # ANDROID
-  # ================================================================
+  # ==============================================================
+  # ANDROID APK
+  # ==============================================================
   android:
     name: Android APK
     runs-on: ubuntu-latest
@@ -51,9 +51,9 @@ jobs:
             build/app/outputs/bundle/release/*.aab
           retention-days: 30
 
-  # ================================================================
+  # ==============================================================
   # iOS
-  # ================================================================
+  # ==============================================================
   ios:
     name: iOS Build
     runs-on: macos-latest
@@ -69,6 +69,11 @@ jobs:
       - name: pub get
         run: flutter pub get
 
+      # حل مشكلة wakelock_plus: upgrade إلى إصدار يدعم Xcode الحديث
+      - name: upgrade wakelock_plus
+        run: |
+          flutter pub upgrade wakelock_plus wakelock_plus_platform_interface || true
+
       - name: pod install
         run: |
           cd ios
@@ -76,23 +81,26 @@ jobs:
           pod install --repo-update
         continue-on-error: true
 
-      - name: build simulator (debug)
+      # بناء debug بدون codesign — الطريقة الوحيدة المضمونة بدون Apple account
+      - name: build ios simulator debug
         run: flutter build ios --simulator --debug --no-codesign
 
       - name: zip simulator app
         run: |
-          APP=$(find build/ios -name "Runner.app" | head -1)
-          echo "Found: $APP"
+          APP=$(find build/ios -name "Runner.app" -type d | head -1)
+          echo "App: $APP"
           cd "$(dirname "$APP")"
           zip -r "$GITHUB_WORKSPACE/CloudGram-iOS-Simulator.zip" Runner.app
 
-      - name: build device (best-effort, no-codesign)
+      # محاولة device build — best effort
+      - name: build ios device (best-effort)
         run: |
           flutter build ios --release --no-codesign \
-            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" || true
 
-      - name: package ipa if available
+      - name: package device ipa
         run: |
           if [ -d "build/ios/iphoneos/Runner.app" ]; then
             mkdir Payload
@@ -110,12 +118,11 @@ jobs:
           if-no-files-found: warn
           retention-days: 30
 
-  # ================================================================
-  # WINDOWS
-  # Flutter 3.22 vswhere hardcodes -version 16 (VS2019).
-  # Fix: set FLUTTER_WINDOWS_VISUAL_STUDIO_VERSION=17 to tell
-  # Flutter to search VS 2022, OR bypass flutter and call cmake+ninja.
-  # ================================================================
+  # ==============================================================
+  # WINDOWS EXE
+  # Flutter 3.22 calls vswhere -version 16 (VS2019 only).
+  # Solution: patch the Flutter tool source to accept VS2022 (version 17)
+  # ==============================================================
   windows:
     name: Windows EXE
     runs-on: windows-2022
@@ -139,98 +146,51 @@ jobs:
         with:
           arch: x64
 
-      - name: install cmake and ninja
+      # الحل الجذري: تعديل ملف Flutter tool الذي يحدد إصدار VS
+      # Flutter يبحث عن VS16 (2019) فقط — نغير الرقم إلى 17 (2022)
+      - name: patch flutter windows_utils.dart to accept VS2022
         shell: pwsh
         run: |
-          choco install cmake --installargs "ADD_CMAKE_TO_PATH=System" -y --no-progress
-          choco install ninja -y --no-progress
-          cmake --version
-          ninja --version
+          $flutterRoot = $env:FLUTTER_ROOT
+          Write-Host "Flutter root: $flutterRoot"
 
-      - name: build windows via flutter
+          # ابحث عن الملف الذي يحتوي على vswhere version 16
+          $files = Get-ChildItem -Recurse "$flutterRoot\packages\flutter_tools\lib" `
+            -Include "*.dart" -ErrorAction SilentlyContinue |
+            Select-String "-version 16" | Select-Object -ExpandProperty Path -Unique
+
+          Write-Host "Files with '-version 16': $($files -join ', ')"
+
+          foreach ($file in $files) {
+            Write-Host "Patching: $file"
+            $content = Get-Content $file -Raw -Encoding UTF8
+            # استبدال -version 16 بـ -version 17 حتى يقبل VS2022
+            $patched = $content -replace '"-version", "16"', '"-version", "17"'
+            $patched = $patched -replace "'-version', '16'", "'-version', '17'"
+            # بعض الملفات تستخدم الصيغة المدمجة
+            $patched = $patched -replace '-version 16', '-version 17'
+            Set-Content $file $patched -Encoding UTF8
+            Write-Host "Patched successfully"
+          }
+
+          # تحقق من التغيير
+          Get-ChildItem -Recurse "$flutterRoot\packages\flutter_tools\lib" `
+            -Include "*.dart" | Select-String "-version 1[67]" | Select-Object Line
+
+      - name: build windows
         shell: pwsh
-        env:
-          # Flutter 3.22 accepts this undocumented env to pick VS version
-          # We also set CMAKE_GENERATOR so if cmake is called directly it uses Ninja
-          CMAKE_GENERATOR: "Ninja"
-        run: |
-          # Patch: create a shim vswhere that returns VS2022 path
-          # Flutter calls: vswhere.exe -format json -utf8 -latest -version 16 ...
-          # We create a PowerShell script wrapper named vswhere.cmd
-          $vsWhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-          $vsPath  = (& $vsWhere -latest -property installationPath) -replace '\\','/'
-          Write-Host "VS2022 path: $vsPath"
+        run: flutter build windows --release --verbose
 
-          # Write fake output JSON to a temp file
-          $fakeOutput = '[{"instanceId":"ci","installationPath":"' + $vsPath + '","installationVersion":"16.11.99.99","productId":"Microsoft.VisualStudio.Product.Enterprise","isComplete":true,"isLaunchable":true,"isPrerelease":false,"catalog":{"productLineVersion":"2019"},"properties":{}}]'
-          $fakeOutput | Set-Content "$env:TEMP\fake_vs.json" -Encoding UTF8
-
-          # Create shim directory before Flutter PATH lookup
-          $shimDir = "$env:TEMP\vswhere_shim"
-          New-Item -ItemType Directory -Force -Path $shimDir | Out-Null
-
-          # Write a .cmd shim that prints our fake JSON
-          "@echo off`r`ntype `"$env:TEMP\fake_vs.json`"" | Set-Content "$shimDir\vswhere.exe.cmd" -Encoding ASCII
-
-          # Copy real vswhere to shim dir so .exe exists (Flutter checks via full path)
-          Copy-Item $vsWhere "$shimDir\vswhere_real.exe"
-
-          # Override PATH so shim dir comes first
-          # BUT Flutter uses the hardcoded path to vswhere.exe, not PATH lookup.
-          # So we must copy our shim AS vswhere.exe in the same location.
-          # Actually Flutter uses: ${env:ProgramFiles(x86)}\...\vswhere.exe directly.
-          # Safest approach: directly call cmake bypassing Flutter detection.
-
-          # Run flutter build — if VS detection fails, we catch and build manually
-          $flutterOk = $false
-          try {
-            flutter build windows --release 2>&1 | Tee-Object -Variable flutterOut
-            $flutterOk = $true
-          } catch {
-            Write-Host "flutter build failed, trying direct cmake..."
-          }
-
-          if (-not $flutterOk) {
-            Write-Host "Falling back to direct CMake build..."
-            # Make sure pub-generated files exist
-            flutter pub get
-
-            # Add VC tools to cmake prefix
-            $vcToolsPath = & $vsWhere -latest -find "VC\Tools\MSVC\*\bin\Hostx64\x64" 2>$null | Select-Object -Last 1
-            if ($vcToolsPath) {
-              $env:PATH = "$vcToolsPath;$env:PATH"
-            }
-
-            New-Item -Force -ItemType Directory -Path "build\windows\x64" | Out-Null
-            cmake -S windows -B build\windows\x64 `
-              -G "Ninja" `
-              -DCMAKE_BUILD_TYPE=Release `
-              -DFLUTTER_TARGET_PLATFORM=windows-x64 `
-              -DCMAKE_C_COMPILER=cl `
-              -DCMAKE_CXX_COMPILER=cl `
-              -DCMAKE_MAKE_PROGRAM=ninja
-
-            cmake --build build\windows\x64 --config Release --parallel
-          }
-
-      - name: find and zip output
+      - name: zip output
         shell: pwsh
         run: |
           $candidates = @(
             "build\windows\x64\runner\Release",
-            "build\windows\runner\Release",
-            "build\windows\x64\Release"
+            "build\windows\runner\Release"
           )
           $src = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
-          if (-not $src) {
-            Write-Host "Scanning for exe files..."
-            Get-ChildItem -Recurse -Include "*.exe" build | Select-Object FullName
-            exit 1
-          }
-          Write-Host "Zipping from: $src"
-          Get-ChildItem $src | Select-Object Name, Length
+          Write-Host "Zipping: $src"
           Compress-Archive -Path "$src\*" -DestinationPath "CloudGram-Windows.zip" -Force
-          Write-Host "Done: $(Get-Item CloudGram-Windows.zip | Select-Object -ExpandProperty Length) bytes"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -238,9 +198,9 @@ jobs:
           path: CloudGram-Windows.zip
           retention-days: 30
 
-  # ================================================================
+  # ==============================================================
   # RELEASE
-  # ================================================================
+  # ==============================================================
   release:
     name: GitHub Release
     runs-on: ubuntu-latest
@@ -272,12 +232,15 @@ jobs:
           body: |
             ## CloudGram — Unlimited Cloud Storage via Telegram
 
-            | Platform | File |
-            |----------|------|
-            | Android | app-arm64-v8a-release.apk |
-            | iOS Simulator | CloudGram-iOS-Simulator.zip |
-            | iOS Device | CloudGram-iOS-Device.ipa |
-            | Windows | CloudGram-Windows.zip |
+            | Platform | File | Note |
+            |----------|------|------|
+            | Android | app-arm64-v8a-release.apk | Recommended |
+            | Android | app-armeabi-v7a-release.apk | Old devices |
+            | iOS Simulator | CloudGram-iOS-Simulator.zip | Simulator only |
+            | iOS Device | CloudGram-iOS-Device.ipa | AltStore/Sideloadly |
+            | Windows | CloudGram-Windows.zip | Run cloudgram.exe |
+
+            > Built automatically by GitHub Actions
           files: |
             artifacts/**/*.apk
             artifacts/**/*.aab
