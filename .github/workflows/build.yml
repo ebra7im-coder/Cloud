@@ -236,7 +236,7 @@ jobs:
 
       - name: build Windows EXE
         shell: pwsh
-flutter build windows --release --verbose
+        run: flutter build windows --release --verbose
 
       - name: zip output
         shell: pwsh
