@@ -264,18 +264,6 @@ jobs:
           }
           Write-Host "ninja files patched"
 
-      - name: flutter-assemble
-        shell: pwsh
-        run: |
-          Set-StrictMode -Off
-          flutter assemble `
-            "-dTargetPlatform=windows-x64" `
-            "-dBuildMode=release" `
-            "-dTargetFile=lib/main.dart" `
-            "-dDartObfuscation=false" `
-            windows_aot_bundle_release_assets 2>&1 | Write-Host
-          Write-Host "assemble done (exit $LASTEXITCODE)"
-
       - name: ninja-build
         shell: pwsh
         run: |
