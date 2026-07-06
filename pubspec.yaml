@@ -23,18 +23,15 @@ dependencies:
   # UI & Design
   flutter_staggered_grid_view: ^0.7.0
   shimmer: ^3.0.0
-  lottie: ^3.1.0
   cached_network_image: ^3.3.1
   percent_indicator: ^4.2.3
-  flutter_svg: ^2.0.10+1
   google_fonts: ^6.2.1
-  animations: ^2.0.11
   flutter_animate: ^4.5.0
 
-  # Media Player
+  # Media Player — إصدارات متوافقة مع Flutter 3.22
   video_player: ^2.8.3
-  chewie: ^1.8.0
-  audioplayers: ^6.0.0
+  chewie: ^1.7.4          # آخر إصدار لا يستخدم withValues()
+  audioplayers: ^5.2.1    # إصدار مستقر
   just_audio: ^0.9.39
 
   # Storage & State
@@ -42,7 +39,6 @@ dependencies:
   hive: ^2.2.3
   hive_flutter: ^1.1.0
   get: ^4.6.6
-  provider: ^6.1.2
 
   # Utils
   path_provider: ^2.1.3
@@ -52,9 +48,7 @@ dependencies:
   open_file: ^3.3.2
   share_plus: ^9.0.0
   connectivity_plus: ^6.0.3
-  flutter_local_notifications: ^17.2.1+2
   image: ^4.2.0
-  crypto: ^3.0.3
   uuid: ^4.4.2
   url_launcher: ^6.3.0
 

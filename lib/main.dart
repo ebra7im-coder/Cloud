@@ -12,20 +12,17 @@ import 'utils/constants.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Lock to portrait mode
   await SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
     DeviceOrientation.portraitDown,
   ]);
 
-  // Initialize Hive
   await Hive.initFlutter();
   Hive.registerAdapter(CloudFileAdapter());
   Hive.registerAdapter(FileTypeAdapter());
   await Hive.openBox<CloudFile>(AppConstants.filesBox);
   await Hive.openBox(AppConstants.settingsBox);
 
-  // Init Telegram Service
   await TelegramService.instance.initialize();
 
   runApp(const CloudGramApp());
@@ -54,10 +51,7 @@ class CloudGramApp extends StatelessWidget {
         brightness: Brightness.light,
       ),
       textTheme: GoogleFonts.cairoTextTheme(),
-      appBarTheme: const AppBarTheme(
-        elevation: 0,
-        centerTitle: true,
-      ),
+      appBarTheme: const AppBarTheme(elevation: 0, centerTitle: true),
     );
   }
 
@@ -77,7 +71,7 @@ class CloudGramApp extends StatelessWidget {
         centerTitle: true,
         backgroundColor: Color(0xFF17212B),
       ),
-      cardTheme: const CardThemeData(
+      cardTheme: const CardTheme(
         color: Color(0xFF232E3C),
         elevation: 0,
       ),

@@ -1,16 +1,18 @@
+import 'package:flutter/material.dart';
+
 class AppConstants {
   // ── Telegram Config ──────────────────────────────────────────────
   static const String botToken = '8993813907:AAEDilniSH02BlvOOuympGqGrUBVqrED48A';
   static const String chatId   = '7206282732';
-  static const String telegramApiBase = 'https://api.telegram.org/bot$botToken';
+  static const String telegramApiBase  = 'https://api.telegram.org/bot$botToken';
   static const String telegramFileBase = 'https://api.telegram.org/file/bot$botToken';
 
   // ── Hive Boxes ───────────────────────────────────────────────────
   static const String filesBox    = 'cloud_files';
   static const String settingsBox = 'settings';
 
-  // ── File Size Limits (Telegram: 2GB per file) ────────────────────
-  static const int maxFileSizeBytes = 2 * 1024 * 1024 * 1024; // 2 GB
+  // ── File Size Limits ─────────────────────────────────────────────
+  static const int maxFileSizeBytes = 2 * 1024 * 1024 * 1024;
 
   // ── Supported Extensions ─────────────────────────────────────────
   static const List<String> imageExtensions  = ['jpg','jpeg','png','gif','webp','bmp','heic','heif'];
@@ -18,7 +20,7 @@ class AppConstants {
   static const List<String> audioExtensions  = ['mp3','aac','ogg','flac','wav','m4a','opus','wma'];
   static const List<String> docExtensions    = ['pdf','doc','docx','xls','xlsx','ppt','pptx','txt','zip','rar'];
 
-  // ── UI ────────────────────────────────────────────────────────────
+  // ── UI Colors ─────────────────────────────────────────────────────
   static const Color primaryColor   = Color(0xFF2AABEE);
   static const Color secondaryColor = Color(0xFF229ED9);
   static const Color bgDark         = Color(0xFF17212B);
@@ -28,5 +30,3 @@ class AppConstants {
   static const Color orangeColor    = Color(0xFFFF9800);
   static const Color purpleColor    = Color(0xFF9C27B0);
 }
-
-import 'package:flutter/material.dart';

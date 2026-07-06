@@ -34,11 +34,10 @@ class _HomeView extends GetView<HomeController> {
 
   Widget _buildBody() {
     switch (controller.currentIndex.value) {
-      case 0: return const DashboardScreen();
-      case 1: return const FilesScreen();
-      case 2: return const SizedBox(); // FAB
-      case 3: return const SearchScreen();
-      case 4: return const SettingsScreen();
+      case 0:  return const DashboardScreen();
+      case 1:  return const FilesScreen();
+      case 3:  return const SearchScreen();
+      case 4:  return const SettingsScreen();
       default: return const DashboardScreen();
     }
   }
@@ -81,18 +80,15 @@ class _HomeView extends GetView<HomeController> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(
-                icon,
-                color: isActive ? AppConstants.primaryColor : Colors.grey,
-                size: 24,
-              ),
-              Text(
-                label,
-                style: TextStyle(
+              Icon(icon,
                   color: isActive ? AppConstants.primaryColor : Colors.grey,
-                  fontSize: 10,
-                ),
-              ),
+                  size: 24),
+              Text(label,
+                  style: TextStyle(
+                      color: isActive
+                          ? AppConstants.primaryColor
+                          : Colors.grey,
+                      fontSize: 10)),
             ],
           ),
         ),
@@ -102,8 +98,10 @@ class _HomeView extends GetView<HomeController> {
 
   Widget _buildFAB() {
     return FloatingActionButton(
-      onPressed: () => Get.to(() => const UploadScreen(),
-          transition: Transition.bottomToTop),
+      onPressed: () => Get.to(
+        () => const UploadScreen(),
+        transition: Transition.downToUp,
+      ),
       backgroundColor: AppConstants.primaryColor,
       child: const Icon(Icons.add_rounded, size: 30, color: Colors.white),
     );
