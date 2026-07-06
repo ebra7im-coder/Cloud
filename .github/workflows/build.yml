@@ -7,11 +7,17 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# Flutter 3.27.4 on stable channel:
+#   - Supports VS2022 natively (vswhere -version 17)
+#   - Ships meta >=1.15 (wakelock_plus_platform_interface compatible)
+#   - CardTheme (not CardThemeData), Color.withValues() available
+#   All 3 root causes resolved by upgrading Flutter.
+
 jobs:
 
-  # ================================================================
-  # ANDROID APK
-  # ================================================================
+  # ============================================================
+  # ANDROID
+  # ============================================================
   android:
     name: Android APK
     runs-on: ubuntu-latest
@@ -25,11 +31,11 @@ jobs:
 
       - uses: subosito/flutter-action@v2
         with:
-          flutter-version: "3.22.2"
+          flutter-version: "3.27.4"
           channel: stable
           cache: true
 
-      - name: pub get
+      - name: flutter pub get
         run: flutter pub get
 
       - name: write local.properties
@@ -37,10 +43,10 @@ jobs:
           echo "flutter.sdk=$FLUTTER_ROOT"  > android/local.properties
           echo "sdk.dir=$ANDROID_SDK_ROOT" >> android/local.properties
 
-      - name: build apk
+      - name: build APK
         run: flutter build apk --release --split-per-abi
 
-      - name: build aab
+      - name: build AAB
         run: flutter build appbundle --release
 
       - uses: actions/upload-artifact@v4
@@ -51,10 +57,9 @@ jobs:
             build/app/outputs/bundle/release/*.aab
           retention-days: 30
 
-  # ================================================================
+  # ============================================================
   # iOS
-  # wakelock_plus fix: dependency_overrides in pubspec forces >=1.4.0
-  # ================================================================
+  # ============================================================
   ios:
     name: iOS Build
     runs-on: macos-latest
@@ -63,11 +68,11 @@ jobs:
 
       - uses: subosito/flutter-action@v2
         with:
-          flutter-version: "3.22.2"
+          flutter-version: "3.27.4"
           channel: stable
           cache: true
 
-      - name: pub get
+      - name: flutter pub get
         run: flutter pub get
 
       - name: pod install
@@ -76,7 +81,7 @@ jobs:
           rm -f Podfile.lock
           pod install --repo-update 2>&1 || true
 
-      - name: build ios simulator debug
+      - name: build iOS simulator (debug)
         run: flutter build ios --simulator --debug --no-codesign
 
       - name: zip simulator app
@@ -86,20 +91,21 @@ jobs:
           cd "$(dirname "$APP")"
           zip -r "$GITHUB_WORKSPACE/CloudGram-iOS-Simulator.zip" Runner.app
 
-      - name: build ios device best-effort
+      - name: build iOS device (best-effort, no codesign)
         run: |
           flutter build ios --release --no-codesign \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" || true
 
-      - name: package ipa if available
+      - name: package IPA if available
         run: |
           if [ -d "build/ios/iphoneos/Runner.app" ]; then
             mkdir Payload
             cp -r build/ios/iphoneos/Runner.app Payload/
             zip -r CloudGram-iOS-Device.ipa Payload/
             rm -rf Payload
+            echo "IPA packaged: $(du -sh CloudGram-iOS-Device.ipa)"
           fi
 
       - uses: actions/upload-artifact@v4
@@ -111,11 +117,10 @@ jobs:
           if-no-files-found: warn
           retention-days: 30
 
-  # ================================================================
+  # ============================================================
   # WINDOWS EXE
-  # Fix: vswhere_wrapper.cs compiled and replaces vswhere.exe
-  # Reports VS2022 as VS2019 to fool Flutter 3.22 tooling
-  # ================================================================
+  # Flutter 3.27+ uses vswhere -version 17 (VS2022) natively
+  # ============================================================
   windows:
     name: Windows EXE
     runs-on: windows-2022
@@ -124,66 +129,22 @@ jobs:
 
       - uses: subosito/flutter-action@v2
         with:
-          flutter-version: "3.22.2"
+          flutter-version: "3.27.4"
           channel: stable
           cache: true
 
       - name: enable windows desktop
         run: flutter config --enable-windows-desktop
 
-      - name: pub get
+      - name: flutter pub get
         run: flutter pub get
 
-      - name: setup msvc x64
+      - name: setup MSVC x64
         uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: x64
 
-      - name: install ninja
-        shell: pwsh
-        run: choco install ninja -y --no-progress
-
-      - name: patch vswhere to accept VS2022
-        shell: pwsh
-        run: |
-          $vsWhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-          $vsPath  = & $vsWhere -latest -property installationPath
-          Write-Host "VS path: $vsPath"
-
-          # Add VS cmake and ninja to PATH
-          $cmakeBin = "$vsPath\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin"
-          $ninjaBin  = "$vsPath\Common7\IDE\CommonExtensions\Microsoft\CMake\Ninja"
-          Write-Host "cmake: $cmakeBin"
-          Write-Host "ninja: $ninjaBin"
-          echo "$cmakeBin" | Out-File $env:GITHUB_PATH -Encoding utf8 -Append
-          echo "$ninjaBin"  | Out-File $env:GITHUB_PATH -Encoding utf8 -Append
-
-          # Backup real vswhere as .orig (wrapper will call it)
-          $origPath = $vsWhere + ".orig"
-          Copy-Item -Force $vsWhere $origPath
-          Write-Host "Backed up to: $origPath"
-
-          # Compile our C# wrapper from the repo script
-          $csc = (Get-ChildItem "C:\Windows\Microsoft.NET\Framework64" -Filter "csc.exe" -Recurse |
-                  Sort-Object FullName -Descending | Select-Object -First 1).FullName
-          Write-Host "Using csc: $csc"
-
-          $wrapperExe = "$env:TEMP\vswhere_wrapper.exe"
-          & $csc /out:"$wrapperExe" scripts\vswhere_wrapper.cs /nologo
-          if (-not (Test-Path $wrapperExe)) { Write-Error "Compile failed"; exit 1 }
-
-          # Replace vswhere.exe with our wrapper
-          Copy-Item -Force $wrapperExe $vsWhere
-          Write-Host "vswhere.exe replaced with wrapper"
-
-          # Verify: wrapper should report version 16.x
-          $reported = & $vsWhere -format json -latest 2>$null | python3 -c "import json,sys; d=json.load(sys.stdin); print(d[0]['installationVersion'] if d else 'none')"
-          Write-Host "Reported version: $reported"
-
-          cmake --version
-          ninja --version
-
-      - name: build windows
+      - name: build Windows EXE
         shell: pwsh
         run: flutter build windows --release
 
@@ -194,9 +155,9 @@ jobs:
             "build\windows\x64\runner\Release",
             "build\windows\runner\Release"
           ) | Where-Object { Test-Path $_ } | Select-Object -First 1
-          Write-Host "Zipping: $src"
-          Get-ChildItem $src | Select-Object Name
+          Write-Host "Zipping from: $src"
           Compress-Archive -Path "$src\*" -DestinationPath "CloudGram-Windows.zip" -Force
+          Write-Host "Done: $((Get-Item 'CloudGram-Windows.zip').Length / 1MB) MB"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -204,9 +165,9 @@ jobs:
           path: CloudGram-Windows.zip
           retention-days: 30
 
-  # ================================================================
+  # ============================================================
   # RELEASE
-  # ================================================================
+  # ============================================================
   release:
     name: GitHub Release
     runs-on: ubuntu-latest
@@ -221,27 +182,32 @@ jobs:
         with:
           path: artifacts/
 
-      - id: tag
+      - name: compute tag
+        id: tag
         run: |
           VER=$(grep '^version:' pubspec.yaml | awk '{print $2}')
           echo "ver=v${VER}" >> $GITHUB_OUTPUT
           echo "tag=v${VER}-$(date +%Y%m%d%H%M%S)" >> $GITHUB_OUTPUT
 
-      - run: find artifacts/ -type f | sort
+      - name: list artifacts
+        run: find artifacts/ -type f | sort
 
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.tag.outputs.tag }}
           name: "CloudGram ${{ steps.tag.outputs.ver }}"
           body: |
-            ## CloudGram — Unlimited Cloud Storage via Telegram
+            ## CloudGram — تخزين سحابي لا محدود عبر تيليجرام
 
-            | Platform | File |
-            |----------|------|
-            | Android | app-arm64-v8a-release.apk |
-            | iOS Simulator | CloudGram-iOS-Simulator.zip |
-            | iOS Device | CloudGram-iOS-Device.ipa |
-            | Windows | CloudGram-Windows.zip |
+            | المنصة | الملف |
+            |--------|-------|
+            | 🤖 Android | `app-arm64-v8a-release.apk` ✅ موصى به |
+            | 🤖 Android | `app-armeabi-v7a-release.apk` أجهزة قديمة |
+            | 🍎 iOS Simulator | `CloudGram-iOS-Simulator.zip` |
+            | 🍎 iOS Device | `CloudGram-iOS-Device.ipa` AltStore/Sideloadly |
+            | 🪟 Windows | `CloudGram-Windows.zip` شغّل cloudgram.exe |
+
+            > بُني تلقائياً بواسطة GitHub Actions — Flutter 3.27.4
           files: |
             artifacts/**/*.apk
             artifacts/**/*.aab
