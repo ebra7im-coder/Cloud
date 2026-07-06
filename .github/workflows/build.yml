@@ -319,6 +319,27 @@ jobs:
             }
           }
 
+          # Copy engine files to ephemeral (needed by ninja build rule)
+          # flutter assemble generates these files
+          flutter assemble -dTargetPlatform=windows-x64 `
+            -dBuildMode=release `
+            -dTargetFile=lib/main.dart `
+            -dDartObfuscation=false `
+            windows_aot_bundle_release_assets `
+            windows_gen_snapshot_release `
+            2>&1 | Select-String -Pattern "dart|error|Error|Generated" | Write-Host
+          Write-Host "flutter assemble completed"
+
+          # Verify engine files
+          $engineFiles = @("flutter_windows.dll","flutter_windows.dll.lib","flutter_export.h")
+          foreach ($ef in $engineFiles) {
+            if (Test-Path "$ephemeral\$ef") {
+              Write-Host "$ef: FOUND"
+            } else {
+              Write-Host "$ef: MISSING"
+            }
+          }
+
           # Ninja build
           Push-Location $buildDir
           & $ninja -j 4
