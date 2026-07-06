@@ -137,7 +137,7 @@ jobs:
 
           # 3. Verify symlinks exist
           $ep = "windows lutter\ephemeral"
-          $sl = "$ep\.plugin_symlinks"
+          $sl = [IO.Path]::Combine($ep, ".plugin_symlinks")
           if (Test-Path $sl) {
             Write-Host "symlinks OK: $(Get-ChildItem $sl | Select-Object -ExpandProperty Name)"
           } else {
