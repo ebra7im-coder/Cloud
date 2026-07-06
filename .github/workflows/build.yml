@@ -193,6 +193,12 @@ jobs:
           Set-Content $buildFile $filtered -Encoding UTF8
           Write-Host "Patched build_windows.dart: removed -A and arch args"
 
+          # Also remove '--target','INSTALL' which doesn't exist in Ninja
+          $buildContent = Get-Content $buildFile -Raw -Encoding UTF8
+          $buildContent = $buildContent -replace "\.\.\.<String>\['--target', 'INSTALL'\],", ''
+          Set-Content $buildFile $buildContent -Encoding UTF8 -NoNewline
+          Write-Host "Also removed INSTALL target patch"
+
           # 3. Wipe ALL flutter tools cache so Flutter rebuilds from patched source
           $cacheDir = "$env:FLUTTER_ROOT\bin\cache"
           $toDelete = @(
