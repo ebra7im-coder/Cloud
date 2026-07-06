@@ -158,52 +158,52 @@ jobs:
           $toolsLib = "$env:FLUTTER_ROOT\packages\flutter_tools\lib\src\windows"
           Write-Host "Patching: $toolsLib"
 
-          # 1. visual_studio.dart: add VS 18 mapping
+          # 1. visual_studio.dart: make unknown VS versions use Ninja
           $vsFile = "$toolsLib\visual_studio.dart"
-          $content = Get-Content $vsFile -Raw -Encoding UTF8
-          # Add "18 => 'Visual Studio 18 2025'," before the default case
-          $content = $content -replace "(_  => 'Visual Studio 16 2019')", "18 => 'Visual Studio 18 2025',`n      _  => 'Visual Studio 16 2019'"
-          # Also support any unknown version -> use Ninja as fallback
-          $content = $content -replace "_  => 'Visual Studio 16 2019'", "_  => 'Ninja'"
-          Set-Content $vsFile $content -Encoding UTF8 -NoNewline
-          Write-Host "Patched visual_studio.dart"
+          $vsContent = Get-Content $vsFile -Raw -Encoding UTF8
+          $vsContent = $vsContent -replace "_  => 'Visual Studio 16 2019'", "_  => 'Ninja'"
+          Set-Content $vsFile $vsContent -Encoding UTF8 -NoNewline
+          Write-Host "Patched visual_studio.dart: fallback => Ninja"
 
-          # 2. build_windows.dart: remove '-A' and getCmakeWindowsArch() lines
+          # 2. build_windows.dart: remove '-A' and getCmakeWindowsArch() (Ninja doesn't support -A)
           $buildFile = "$toolsLib\build_windows.dart"
-          $content = Get-Content $buildFile -Raw -Encoding UTF8
-          # Remove the two lines that add -A and x64 to cmake args
-          $content = $content -replace "        '-A',\r?\n        getCmakeWindowsArch\(targetPlatform\),\r?\n", ""
-          $content = $content -replace "        '-A',\n        getCmakeWindowsArch\(targetPlatform\),\n", ""
-          Set-Content $buildFile $content -Encoding UTF8 -NoNewline
-          Write-Host "Patched build_windows.dart"
-
-          # 3. Delete pre-compiled snapshot to force recompilation from patched source
-          $snapshot = "$env:FLUTTER_ROOT\bin\cache\flutter_tools.snapshot"
-          if (Test-Path $snapshot) {
-            Remove-Item $snapshot -Force
-            Write-Host "Deleted snapshot -> Flutter will recompile from source"
+          $buildLines = Get-Content $buildFile
+          $filtered = [System.Collections.Generic.List[string]]::new()
+          $skip = $false
+          foreach ($line in $buildLines) {
+            if ($line.TrimEnd() -eq "        '-A',") {
+              $skip = $true
+              continue
+            }
+            if ($skip -and $line.TrimEnd().StartsWith("        getCmakeWindowsArch")) {
+              $skip = $false
+              continue
+            }
+            $filtered.Add($line)
           }
+          Set-Content $buildFile $filtered -Encoding UTF8
+          Write-Host "Patched build_windows.dart: removed -A and arch args"
 
-          Write-Host "All patches applied successfully" 
+          # 3. Wipe ALL flutter tools cache so Flutter rebuilds from patched source
+          $cacheDir = "$env:FLUTTER_ROOT\bin\cache"
+          $toDelete = @(
+            "$cacheDir\flutter_tools.snapshot",
+            "$cacheDir\flutter_tools.stamp",
+            "$env:FLUTTER_ROOT\packages\flutter_tools\.dart_tool"
+          )
+          foreach ($p in $toDelete) {
+            if (Test-Path $p) {
+              Remove-Item $p -Recurse -Force
+              Write-Host "Deleted: $p"
+            }
+          }
+          Write-Host "All patches applied. Flutter will JIT-compile from patched source." 
 
-      - name: build Windows EXE (dart run on patched source)
+      - name: build Windows EXE
         shell: pwsh
         run: |
-          # Run dart directly on the patched flutter_tools source
-          # bypassing the cached/regenerated snapshot entirely
-          $dartSdk = "$env:FLUTTER_ROOT\bin\cache\dart-sdk\bin\dart.exe"
-          $flutterTools = "$env:FLUTTER_ROOT\packages\flutter_tools\bin\flutter_tools.dart"
-
-          Write-Host "dart: $dartSdk"
-          Write-Host "tools: $flutterTools"
-
-          # dart run needs pub deps resolved in flutter_tools
-          Push-Location "$env:FLUTTER_ROOT\packages\flutter_tools"
-          & $dartSdk pub get --no-precompile 2>&1 | Out-Null
-          Pop-Location
-
-          # Run build via dart (JIT, uses patched source directly)
-          & $dartSdk run $flutterTools build windows --release
+          # Flutter will JIT-compile from patched source (no cached snapshot)
+          flutter build windows --release
 
       - name: zip output
         shell: pwsh
