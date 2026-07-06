@@ -40,7 +40,7 @@ jobs:
         run: flutter analyze --no-fatal-infos
         continue-on-error: true
 
-      - name: 🔨 Build APK (release)
+      - name: 🔨 Build APK (split per ABI)
         run: flutter build apk --release --split-per-abi
 
       - name: 🔨 Build App Bundle (AAB)
@@ -54,12 +54,6 @@ jobs:
             build/app/outputs/flutter-apk/*.apk
             build/app/outputs/bundle/release/*.aab
           retention-days: 30
-
-      - name: 🏷️ Get version
-        id: version
-        run: |
-          VERSION=$(grep 'version:' pubspec.yaml | head -1 | awk '{print $2}')
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
 
       - name: 📢 APK build summary
         run: |
@@ -91,28 +85,32 @@ jobs:
       - name: 📦 Install dependencies
         run: flutter pub get
 
-      - name: 🔧 Install CocoaPods
+      - name: 🔧 Flutter create iOS (generate missing files)
+        run: |
+          flutter create --platforms=ios --org com.cloudgram . || true
+          ls ios/Runner.xcodeproj/
+
+      - name: 🔧 Install CocoaPods dependencies
         run: |
           cd ios
           pod install --repo-update
         continue-on-error: true
 
       - name: 🔨 Build iOS (no codesign)
-        run: |
-          flutter build ios --release --no-codesign
+        run: flutter build ios --release --no-codesign
 
-      - name: 📦 Package IPA (ad-hoc unsigned)
+      - name: 📦 Package IPA (unsigned)
         run: |
           mkdir -p Payload
           cp -r build/ios/iphoneos/Runner.app Payload/
-          zip -r CloudGram.ipa Payload/
+          zip -r CloudGram-iOS.ipa Payload/
           rm -rf Payload
 
       - name: 📤 Upload IPA artifact
         uses: actions/upload-artifact@v4
         with:
           name: ios-ipa
-          path: CloudGram.ipa
+          path: CloudGram-iOS.ipa
           retention-days: 30
 
       - name: 📢 iOS build summary
@@ -120,7 +118,7 @@ jobs:
           echo "## ✅ iOS Build Successful" >> $GITHUB_STEP_SUMMARY
           echo "| File | Size |" >> $GITHUB_STEP_SUMMARY
           echo "|------|------|" >> $GITHUB_STEP_SUMMARY
-          echo "| CloudGram.ipa | $(du -sh CloudGram.ipa | cut -f1) |" >> $GITHUB_STEP_SUMMARY
+          echo "| CloudGram-iOS.ipa | $(du -sh CloudGram-iOS.ipa | cut -f1) |" >> $GITHUB_STEP_SUMMARY
 
 # ─────────────────────────────────────────────────────────────────
 # 3️⃣  Windows EXE
@@ -146,6 +144,9 @@ jobs:
       - name: 📦 Install dependencies
         run: flutter pub get
 
+      - name: 🔧 Flutter create Windows (generate missing platform files)
+        run: flutter create --platforms=windows --org com.cloudgram . 2>&1 || true
+
       - name: 🔨 Build Windows EXE
         run: flutter build windows --release
 
@@ -166,14 +167,14 @@ jobs:
       - name: 📢 Windows build summary
         shell: pwsh
         run: |
-          $size = (Get-Item "CloudGram-Windows.zip").Length / 1MB
+          $size = [math]::Round((Get-Item "CloudGram-Windows.zip").Length / 1MB, 1)
           echo "## ✅ Windows Build Successful" >> $env:GITHUB_STEP_SUMMARY
           echo "| File | Size |" >> $env:GITHUB_STEP_SUMMARY
           echo "|------|------|" >> $env:GITHUB_STEP_SUMMARY
-          echo "| CloudGram-Windows.zip | $([math]::Round($size,1)) MB |" >> $env:GITHUB_STEP_SUMMARY
+          echo "| CloudGram-Windows.zip | ${size} MB |" >> $env:GITHUB_STEP_SUMMARY
 
 # ─────────────────────────────────────────────────────────────────
-# 4️⃣  Auto Release (فقط عند push على main)
+# 4️⃣  Auto GitHub Release
 # ─────────────────────────────────────────────────────────────────
   release:
     name: 🏷️ Create GitHub Release
@@ -193,14 +194,15 @@ jobs:
         with:
           path: artifacts/
 
-      - name: 🏷️ Get version from pubspec
+      - name: 🏷️ Get version & tag
         id: version
         run: |
           VERSION=$(grep '^version:' pubspec.yaml | awk '{print $2}')
-          echo "version=v$VERSION" >> $GITHUB_OUTPUT
-          echo "tag=v$VERSION-$(date +%Y%m%d%H%M%S)" >> $GITHUB_OUTPUT
+          TAG="v${VERSION}-$(date +%Y%m%d%H%M%S)"
+          echo "version=v${VERSION}" >> $GITHUB_OUTPUT
+          echo "tag=${TAG}"          >> $GITHUB_OUTPUT
 
-      - name: 🗂 List downloaded artifacts
+      - name: 🗂 List artifacts
         run: find artifacts/ -type f | sort
 
       - name: 🚀 Create GitHub Release
@@ -211,36 +213,30 @@ jobs:
           body: |
             ## ☁️ CloudGram — تخزين سحابي لا محدود عبر تيليجرام
 
-            ### 📥 التحميل
+            ### 📥 ملفات التنزيل
 
-            | المنصة | الملف |
-            |--------|-------|
-            | 🤖 Android | `app-arm64-v8a-release.apk` (موصى به) |
-            | 🤖 Android | `app-armeabi-v7a-release.apk` (أجهزة قديمة) |
-            | 🤖 Android | `app-x86_64-release.apk` (محاكي) |
-            | 🍎 iOS | `CloudGram.ipa` (يحتاج Sideloading) |
-            | 🪟 Windows | `CloudGram-Windows.zip` (فك الضغط وشغّل) |
+            | المنصة | الملف | الوصف |
+            |--------|-------|-------|
+            | 🤖 Android | `app-arm64-v8a-release.apk` | أجهزة حديثة (موصى به) |
+            | 🤖 Android | `app-armeabi-v7a-release.apk` | أجهزة قديمة |
+            | 🤖 Android | `app-x86_64-release.apk` | محاكي |
+            | 🍎 iOS | `CloudGram-iOS.ipa` | يحتاج AltStore أو Sideloadly |
+            | 🪟 Windows | `CloudGram-Windows.zip` | فك الضغط وشغّل |
 
             ### ✨ المميزات
-            - 📤 رفع أي نوع ملف (صور • فيديو • موسيقى • مستندات)
             - ☁️ تخزين لا محدود عبر Telegram Bot API
-            - 🎥 مشغّل فيديو مدمج
-            - 🎵 مشغّل موسيقى مدمج
-            - 🔍 بحث سريع
-            - 🌙 Dark Theme
-
-            ### 🛠 كيفية التثبيت على Android
-            1. حمّل ملف `arm64-v8a` إذا كان جهازك حديثاً
-            2. فعّل **"تثبيت من مصادر غير معروفة"** في الإعدادات
-            3. افتح الملف وثبّت
+            - 📤 رفع صور، فيديو، موسيقى، ومستندات
+            - 🎥 مشغّل فيديو وموسيقى مدمج
+            - 🔍 بحث سريع وتنظيم بالمجلدات
+            - 🌙 Dark Theme بتصميم Telegram
 
             ---
             > 🤖 تم البناء تلقائياً بواسطة GitHub Actions
           files: |
-            artifacts/android-apks/*.apk
-            artifacts/android-apks/*.aab
-            artifacts/ios-ipa/CloudGram.ipa
-            artifacts/windows-exe/CloudGram-Windows.zip
+            artifacts/**/*.apk
+            artifacts/**/*.aab
+            artifacts/**/*.ipa
+            artifacts/**/*.zip
           draft: false
           prerelease: false
         env:
