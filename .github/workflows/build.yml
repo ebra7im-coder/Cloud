@@ -164,9 +164,34 @@ jobs:
           flutter precache --windows
           Write-Host "Windows engine precached"
 
-          # Also run flutter pub get to regenerate ephemeral symlinks
+          # Run flutter pub get to generate ephemeral plugin symlinks
           flutter pub get
-          Write-Host "Pub get done" 
+          Write-Host "Pub get done"
+
+          # Run flutter assemble to copy engine DLLs into windows/flutter/ephemeral/
+          # This is what flutter build windows does internally as first step
+          flutter assemble -dTargetPlatform=windows-x64 -dBuildMode=release `
+            -dTargetFile=lib/main.dart `
+            windows_aot_bundle_release_assets 2>&1 | Out-Null
+          Write-Host "Flutter assemble done"
+
+          # Verify the .lib file exists now
+          $libFile = "windows\flutter\ephemeral\flutter_windows.dll.lib"
+          if (Test-Path $libFile) {
+            Write-Host "flutter_windows.dll.lib found ✅"
+          } else {
+            # Try copying from cache
+            $engineDir = "$env:FLUTTER_ROOT\bin\cache\artifacts\engine\windows-x64-release"
+            if (-not (Test-Path $engineDir)) {
+              $engineDir = "$env:FLUTTER_ROOT\bin\cache\artifacts\engine\windows-x64"
+            }
+            Write-Host "Engine dir: $engineDir"
+            if (Test-Path $engineDir) {
+              New-Item -Force -ItemType Directory "windows\flutter\ephemeral" | Out-Null
+              Copy-Item "$engineDir\*" "windows\flutter\ephemeral\" -Force
+              Write-Host "Copied engine files from cache"
+            }
+          } 
 
       - name: patch flutter_tools source for VS2025 + Ninja
         shell: pwsh
