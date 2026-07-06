@@ -7,16 +7,10 @@ on:
     branches: [main]
   workflow_dispatch:
 
-# Flutter 3.27.4 on stable channel:
-#   - Supports VS2022 natively (vswhere -version 17)
-#   - Ships meta >=1.15 (wakelock_plus_platform_interface compatible)
-#   - CardTheme (not CardThemeData), Color.withValues() available
-#   All 3 root causes resolved by upgrading Flutter.
-
 jobs:
 
   # ============================================================
-  # ANDROID
+  # ANDROID APK
   # ============================================================
   android:
     name: Android APK
@@ -37,6 +31,10 @@ jobs:
 
       - name: flutter pub get
         run: flutter pub get
+
+      - name: create asset dirs
+        run: |
+          mkdir -p assets/icons assets/images
 
       - name: write local.properties
         run: |
@@ -75,13 +73,16 @@ jobs:
       - name: flutter pub get
         run: flutter pub get
 
+      - name: create asset dirs
+        run: mkdir -p assets/icons assets/images
+
       - name: pod install
         run: |
           cd ios
           rm -f Podfile.lock
           pod install --repo-update 2>&1 || true
 
-      - name: build iOS simulator (debug)
+      - name: build iOS simulator debug
         run: flutter build ios --simulator --debug --no-codesign
 
       - name: zip simulator app
@@ -91,21 +92,20 @@ jobs:
           cd "$(dirname "$APP")"
           zip -r "$GITHUB_WORKSPACE/CloudGram-iOS-Simulator.zip" Runner.app
 
-      - name: build iOS device (best-effort, no codesign)
+      - name: build iOS device best-effort
         run: |
           flutter build ios --release --no-codesign \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" || true
 
-      - name: package IPA if available
+      - name: package IPA
         run: |
           if [ -d "build/ios/iphoneos/Runner.app" ]; then
             mkdir Payload
             cp -r build/ios/iphoneos/Runner.app Payload/
             zip -r CloudGram-iOS-Device.ipa Payload/
             rm -rf Payload
-            echo "IPA packaged: $(du -sh CloudGram-iOS-Device.ipa)"
           fi
 
       - uses: actions/upload-artifact@v4
@@ -119,11 +119,13 @@ jobs:
 
   # ============================================================
   # WINDOWS EXE
-  # Flutter 3.27+ uses vswhere -version 17 (VS2022) natively
+  # apply_standard_settings undefined = CMake infra not loaded.
+  # Fix: call flutter build windows INSIDE a Developer PowerShell
+  # using the "Developer Command Prompt" env which loads all CMake vars.
   # ============================================================
   windows:
     name: Windows EXE
-    runs-on: windows-2022
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
 
@@ -139,14 +141,28 @@ jobs:
       - name: flutter pub get
         run: flutter pub get
 
-      - name: setup MSVC x64
-        uses: ilammy/msvc-dev-cmd@v1
-        with:
-          arch: x64
-
-      - name: build Windows EXE
+      - name: create asset dirs
         shell: pwsh
-        run: flutter build windows --release
+        run: New-Item -Force -ItemType Directory assets\icons, assets\images | Out-Null
+
+      - name: build Windows via Developer PowerShell
+        shell: pwsh
+        run: |
+          # Find VS 2022 vcvarsall
+          $vsWhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vsPath  = & $vsWhere -latest -property installationPath
+          $vcVars  = "$vsPath\VC\Auxiliary\Build\vcvars64.bat"
+          Write-Host "vcvars64: $vcVars"
+
+          # Run flutter build inside the VS env using cmd.exe
+          $cmd = "call `"$vcVars`" && flutter build windows --release"
+          $proc = Start-Process -FilePath "cmd.exe" `
+            -ArgumentList "/c", $cmd `
+            -NoNewWindow -PassThru -Wait
+          if ($proc.ExitCode -ne 0) {
+            Write-Error "flutter build windows failed (exit $($proc.ExitCode))"
+            exit $proc.ExitCode
+          }
 
       - name: zip output
         shell: pwsh
@@ -155,9 +171,9 @@ jobs:
             "build\windows\x64\runner\Release",
             "build\windows\runner\Release"
           ) | Where-Object { Test-Path $_ } | Select-Object -First 1
-          Write-Host "Zipping from: $src"
+          Write-Host "Zipping: $src"
           Compress-Archive -Path "$src\*" -DestinationPath "CloudGram-Windows.zip" -Force
-          Write-Host "Done: $((Get-Item 'CloudGram-Windows.zip').Length / 1MB) MB"
+          Write-Host "Size: $([math]::Round((Get-Item 'CloudGram-Windows.zip').Length/1MB,1)) MB"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -197,14 +213,14 @@ jobs:
           tag_name: ${{ steps.tag.outputs.tag }}
           name: "CloudGram ${{ steps.tag.outputs.ver }}"
           body: |
-            ## CloudGram — تخزين سحابي لا محدود عبر تيليجرام
+            ## ☁️ CloudGram — تخزين سحابي لا محدود عبر تيليجرام
 
             | المنصة | الملف |
             |--------|-------|
             | 🤖 Android | `app-arm64-v8a-release.apk` ✅ موصى به |
             | 🤖 Android | `app-armeabi-v7a-release.apk` أجهزة قديمة |
             | 🍎 iOS Simulator | `CloudGram-iOS-Simulator.zip` |
-            | 🍎 iOS Device | `CloudGram-iOS-Device.ipa` AltStore/Sideloadly |
+            | 🍎 iOS Device | `CloudGram-iOS-Device.ipa` AltStore / Sideloadly |
             | 🪟 Windows | `CloudGram-Windows.zip` شغّل cloudgram.exe |
 
             > بُني تلقائياً بواسطة GitHub Actions — Flutter 3.27.4
