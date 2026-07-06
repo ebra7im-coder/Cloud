@@ -299,25 +299,21 @@ jobs:
             $nContent = Get-Content $fbn -Raw -Encoding UTF8
             # Replace the specific build rule: change from CUSTOM_COMMAND to phony
             # The rule has flutter_windows.dll in its output list
-            $nContent = [regex]::Replace(
-              $nContent,
-              "(?m)^(build (?:[^
-]*flutter_windows\.dll[^
-]*): )CUSTOM_COMMAND$",
-              '$1phony'
-            )
-            # Also remove the COMMAND, RESTAT, etc. lines that follow the build rule
             $lines3 = $nContent -split "`n"
             $out3 = [System.Collections.Generic.List[string]]::new()
-            $inPhonyFix = $false
+            $inBrokenRule = $false
             foreach ($l3 in $lines3) {
-              if ($l3 -match "^build .*flutter_windows\.dll.*: phony") {
-                $inPhonyFix = $true
-                $out3.Add($l3)
+              # Detect the CUSTOM_COMMAND rule for flutter engine files
+              if ($l3 -match "^build .*flutter_windows" -and $l3 -match "CUSTOM_COMMAND") {
+                # Replace with phony (extract the build targets part)
+                $targets = ($l3 -split ": CUSTOM_COMMAND")[0]
+                $out3.Add("$targets: phony")
+                $inBrokenRule = $true
                 continue
               }
-              if ($inPhonyFix -and $l3.StartsWith(" ")) { continue }
-              if ($inPhonyFix) { $inPhonyFix = $false }
+              # Skip continuation lines of the broken rule
+              if ($inBrokenRule -and $l3.StartsWith(" ")) { continue }
+              if ($inBrokenRule) { $inBrokenRule = $false }
               $out3.Add($l3)
             }
             $nContent = $out3 -join "`n"
