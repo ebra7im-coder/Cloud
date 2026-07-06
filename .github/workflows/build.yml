@@ -151,31 +151,45 @@ jobs:
         with:
           arch: x64
 
-      - name: patch Flutter snapshot VS2019 -> VS2022
+      - name: detect VS version and patch Flutter snapshot
         shell: pwsh
         run: |
           $snapshot = "$env:FLUTTER_ROOT\bin\cache\flutter_tools.snapshot"
           Write-Host "Snapshot: $snapshot  Exists: $(Test-Path $snapshot)"
 
+          # Detect installed VS version via vswhere
+          $vsWhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vsVer   = & $vsWhere -latest -property installationVersion
+          $vsMaj   = [int]($vsVer -split '\.')[0]
+          Write-Host "Installed VS major version: $vsMaj"
+
+          # Map major version to CMake generator name
+          $genMap = @{ 16='Visual Studio 16 2019'; 17='Visual Studio 17 2022'; 18='Visual Studio 18 2025' }
+          $targetGen = $genMap[$vsMaj]
+          if (-not $targetGen) { Write-Warning "Unknown VS $vsMaj"; exit 0 }
+          Write-Host "Target generator: $targetGen"
+
+          # Always patch FROM "Visual Studio 16 2019" (Flutter hardcoded)
           $old = [System.Text.Encoding]::UTF8.GetBytes("Visual Studio 16 2019")
-          $new = [System.Text.Encoding]::UTF8.GetBytes("Visual Studio 17 2022")
+          $new = [System.Text.Encoding]::UTF8.GetBytes($targetGen)
+
+          # Ensure same length (pad or truncate with spaces)
+          while ($new.Length -lt $old.Length) { $new += [byte][char]' ' }
+          $new = $new[0..($old.Length-1)]
 
           $bytes = [System.IO.File]::ReadAllBytes($snapshot)
           $count = 0
           for ($i = 0; $i -le $bytes.Length - $old.Length; $i++) {
-            $match = $true
-            for ($j = 0; $j -lt $old.Length; $j++) {
-              if ($bytes[$i+$j] -ne $old[$j]) { $match = $false; break }
-            }
-            if ($match) {
+            $m = $true
+            for ($j = 0; $j -lt $old.Length; $j++) { if ($bytes[$i+$j] -ne $old[$j]) { $m = $false; break } }
+            if ($m) {
               for ($j = 0; $j -lt $new.Length; $j++) { $bytes[$i+$j] = $new[$j] }
               $count++
-              Write-Host "Patched at offset $i"
+              Write-Host "Patched offset $i with: '$targetGen'"
             }
           }
           [System.IO.File]::WriteAllBytes($snapshot, $bytes)
-          Write-Host "Total patches: $count"
-          if ($count -eq 0) { Write-Warning "Nothing patched — may fail" }
+          Write-Host "Total patches applied: $count"
 
       - name: build Windows EXE
         shell: pwsh
