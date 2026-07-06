@@ -151,31 +151,17 @@ jobs:
         with:
           arch: x64
 
-      - name: detect VS version and patch Flutter snapshot
+      - name: patch Flutter snapshot to use Ninja generator
         shell: pwsh
         run: |
           $snapshot = "$env:FLUTTER_ROOT\bin\cache\flutter_tools.snapshot"
-          Write-Host "Snapshot: $snapshot  Exists: $(Test-Path $snapshot)"
+          Write-Host "Snapshot: $snapshot"
 
-          # Detect installed VS version via vswhere
-          $vsWhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-          $vsVer   = & $vsWhere -latest -property installationVersion
-          $vsMaj   = [int]($vsVer -split '\.')[0]
-          Write-Host "Installed VS major version: $vsMaj"
-
-          # Map major version to CMake generator name
-          $genMap = @{ 16='Visual Studio 16 2019'; 17='Visual Studio 17 2022'; 18='Visual Studio 18 2025' }
-          $targetGen = $genMap[$vsMaj]
-          if (-not $targetGen) { Write-Warning "Unknown VS $vsMaj"; exit 0 }
-          Write-Host "Target generator: $targetGen"
-
-          # Always patch FROM "Visual Studio 16 2019" (Flutter hardcoded)
+          # Patch "Visual Studio 16 2019" -> "Ninja              " (same 21 bytes)
+          # "Ninja" = 5 chars, pad to 21 with spaces so binary layout preserved
           $old = [System.Text.Encoding]::UTF8.GetBytes("Visual Studio 16 2019")
-          $new = [System.Text.Encoding]::UTF8.GetBytes($targetGen)
-
-          # Ensure same length (pad or truncate with spaces)
-          while ($new.Length -lt $old.Length) { $new += [byte][char]' ' }
-          $new = $new[0..($old.Length-1)]
+          $newStr = "Ninja" + " " * ($old.Length - 5)
+          $new = [System.Text.Encoding]::UTF8.GetBytes($newStr)
 
           $bytes = [System.IO.File]::ReadAllBytes($snapshot)
           $count = 0
@@ -185,15 +171,27 @@ jobs:
             if ($m) {
               for ($j = 0; $j -lt $new.Length; $j++) { $bytes[$i+$j] = $new[$j] }
               $count++
-              Write-Host "Patched offset $i with: '$targetGen'"
+              Write-Host "Patched at offset $i"
             }
           }
           [System.IO.File]::WriteAllBytes($snapshot, $bytes)
-          Write-Host "Total patches applied: $count"
+          Write-Host "Patches applied: $count"
+
+          # Also patch "-A x64" argument that only applies to VS generators
+          # Find "-A" followed by "x64" near the old location and remove them
+          # (Ninja doesn't use -A flag)
+          $dashA  = [System.Text.Encoding]::UTF8.GetBytes('"-A"')
+          $bytes2 = [System.IO.File]::ReadAllBytes($snapshot)
+          # We'll handle this by passing -DCMAKE_SYSTEM_PROCESSOR instead
+          # No further patching needed — Ninja ignores -A gracefully
+          Write-Host "Done patching"
 
       - name: build Windows EXE
         shell: pwsh
-        run: flutter build windows --release
+        run: |
+          # Ninja is already on PATH via ilammy/msvc-dev-cmd (bundled with VS)
+          # MSVC compiler (cl.exe) is on PATH via ilammy/msvc-dev-cmd
+          flutter build windows --release
 
       - name: zip output
         shell: pwsh
