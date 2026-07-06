@@ -28,10 +28,10 @@ dependencies:
   google_fonts: ^6.2.1
   flutter_animate: ^4.5.0
 
-  # Media Player — إصدارات مثبّتة بدقة لتجنب withValues()
+  # Media Player — exact pins for Flutter 3.22 compatibility
   video_player: ^2.8.3
-  chewie: 1.7.4            # تثبيت دقيق — 1.8.x يستخدم Color.withValues() غير متوفرة في Flutter 3.22
-  audioplayers: 5.2.1      # تثبيت دقيق
+  chewie: 1.7.4
+  audioplayers: 5.2.1
   just_audio: ^0.9.39
 
   # Storage & State
@@ -53,6 +53,11 @@ dependencies:
   url_launcher: ^6.3.0
 
   cupertino_icons: ^1.0.8
+
+# Force wakelock_plus to >=1.4.0 to fix 'messages.g.h not found' on iOS
+dependency_overrides:
+  wakelock_plus: ">=1.4.0 <2.0.0"
+  wakelock_plus_platform_interface: ">=1.4.0 <2.0.0"
 
 dev_dependencies:
   flutter_test:
