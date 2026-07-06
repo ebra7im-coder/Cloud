@@ -136,7 +136,7 @@ jobs:
           Write-Host "pub get done"
 
           # 3. Verify symlinks exist
-          $ep = "windows lutter\ephemeral"
+          $ep = "windows\flutter\ephemeral"
           $sl = [IO.Path]::Combine($ep, ".plugin_symlinks")
           if (Test-Path $sl) {
             Write-Host "symlinks OK: $(Get-ChildItem $sl | Select-Object -ExpandProperty Name)"
@@ -167,8 +167,8 @@ jobs:
           # 5. Copy engine DLLs to ephemeral
           New-Item -Force -ItemType Directory $ep | Out-Null
           $edirs = @(
-            "$env:FLUTTER_ROOT in\cache rtifacts\engine\windows-x64-release",
-            "$env:FLUTTER_ROOT in\cache rtifacts\engine\windows-x64"
+            "$env:FLUTTER_ROOT\bin\cache\artifacts\engine\windows-x64-release",
+            "$env:FLUTTER_ROOT\bin\cache\artifacts\engine\windows-x64"
           )
           foreach ($ed in $edirs) {
             if (Test-Path $ed) {
@@ -195,15 +195,15 @@ jobs:
           Write-Host "generated_config.cmake written"
 
           # 7. Patch flutter_tools dart source
-          $lib = "$env:FLUTTER_ROOT\packages lutter_tools\lib\src\windows"
+          $lib = "$env:FLUTTER_ROOT\packages\flutter_tools\lib\src\windows"
 
-          $vsf = "$lib isual_studio.dart"
+          $vsf = "$lib\\visual_studio.dart"
           $c = Get-Content $vsf -Raw -Encoding UTF8
           $c = $c -replace "_  => 'Visual Studio 16 2019'", "_  => 'Ninja'"
           Set-Content $vsf $c -Encoding UTF8 -NoNewline
           Write-Host "patched visual_studio.dart"
 
-          $bwf = "$lib uild_windows.dart"
+          $bwf = "$lib\build_windows.dart"
           $blines = Get-Content $bwf
           $bout = [System.Collections.Generic.List[string]]::new()
           $skipN = $false
@@ -218,9 +218,9 @@ jobs:
 
           # 8. Delete snapshot to force JIT recompile
           $kills = @(
-            "$env:FLUTTER_ROOT in\cache lutter_tools.snapshot",
-            "$env:FLUTTER_ROOT in\cache lutter_tools.stamp",
-            "$env:FLUTTER_ROOT\packages lutter_tools\.dart_tool"
+            "$env:FLUTTER_ROOT\bin\cache\flutter_tools.snapshot",
+            "$env:FLUTTER_ROOT\bin\cache\flutter_tools.stamp",
+            "$env:FLUTTER_ROOT\packages\flutter_tools\.dart_tool"
           )
           foreach ($k in $kills) {
             if (Test-Path $k) { Remove-Item $k -Recurse -Force; Write-Host "deleted $k" }
