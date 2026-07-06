@@ -177,6 +177,10 @@ jobs:
             }
           }
 
+          # Run flutter pub get after create to generate ephemeral plugin symlinks
+          flutter pub get
+          Write-Host "Plugin symlinks generated"
+
           # Write generated_config.cmake correctly (no quoted cmake strings)
           $flutterRoot = $env:FLUTTER_ROOT -replace "\\", "/"
           $projDir = (Get-Location).Path -replace "\\", "/"
