@@ -1,11 +1,14 @@
+// screens/dashboard_screen.dart
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:flutter_screenutil/flutter_screenutil.dart';
+import 'package:iconsax/iconsax.dart';
+import 'package:google_fonts/google_fonts.dart';
+
+import '../utils/theme.dart';
 import '../controllers/home_controller.dart';
 import '../models/file_model.dart';
-import '../utils/constants.dart';
-import '../widgets/stats_card.dart';
-import '../widgets/quick_action_widget.dart';
-import '../widgets/recent_file_item.dart';
+import '../widgets/glass_card.dart';
 import 'upload_screen.dart';
 import 'files_screen.dart';
 
@@ -14,144 +17,40 @@ class DashboardScreen extends GetView<HomeController> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppConstants.bgDark,
-      body: RefreshIndicator(
-        color: AppConstants.primaryColor,
-        backgroundColor: AppConstants.cardDark,
-        onRefresh: controller.syncFiles,
-        child: CustomScrollView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          slivers: [
-            // ── AppBar ─────────────────────────────────────────
-            SliverAppBar(
-              backgroundColor: AppConstants.bgDark,
-              floating: true,
-              pinned: true,
-              expandedHeight: 0,
-              toolbarHeight: 64,
-              flexibleSpace: SafeArea(
-                child: Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  child: Row(
-                    children: [
-                      // Avatar + Welcome
-                      CircleAvatar(
-                        radius: 22,
-                        backgroundColor:
-                            AppConstants.primaryColor.withOpacity(0.2),
-                        child: const Icon(Icons.person_rounded,
-                            color: AppConstants.primaryColor, size: 26),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Text('مرحباً بك 👋',
-                                style: TextStyle(
-                                    color: Colors.grey[400], fontSize: 12)),
-                            const Text('CloudGram',
-                                style: TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.bold)),
-                          ],
-                        ),
-                      ),
-                      // Sync button
-                      Obx(() => controller.isLoading.value
-                          ? const SizedBox(
-                              width: 20,
-                              height: 20,
-                              child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: AppConstants.primaryColor))
-                          : IconButton(
-                              onPressed: controller.syncFiles,
-                              icon: const Icon(Icons.sync_rounded,
-                                  color: Colors.white70),
-                              tooltip: 'مزامنة',
-                            )),
-                      // Notifications
-                      IconButton(
-                        onPressed: _showNotifications,
-                        icon: Stack(
-                          clipBehavior: Clip.none,
-                          children: [
-                            const Icon(Icons.notifications_rounded,
-                                color: Colors.white),
-                            Positioned(
-                              top: -2,
-                              right: -2,
-                              child: Container(
-                                width: 8,
-                                height: 8,
-                                decoration: const BoxDecoration(
-                                    color: Colors.red,
-                                    shape: BoxShape.circle),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-
-            // ── Body ───────────────────────────────────────────
-            SliverPadding(
-              padding: const EdgeInsets.fromLTRB(16, 4, 16, 100),
-              sliver: SliverList(
-                delegate: SliverChildListDelegate([
-                  // Storage Card
-                  _buildStorageCard(),
-                  const SizedBox(height: 20),
-
-                  // Stats row
-                  _buildStatsRow(),
-                  const SizedBox(height: 20),
-
-                  // Quick actions
-                  _buildQuickActions(),
-                  const SizedBox(height: 20),
-
-                  // Recent files
-                  _buildRecentFiles(),
-                ]),
-              ),
-            ),
-          ],
-        ),
+    return SingleChildScrollView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      padding: EdgeInsets.symmetric(horizontal: 20.w),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(height: 8.h),
+          _buildStorageCard(),
+          SizedBox(height: 20.h),
+          _buildQuickStats(),
+          SizedBox(height: 20.h),
+          _buildRecentActivity(),
+          SizedBox(height: 20.h),
+          _buildQuickActions(),
+          SizedBox(height: 40.h),
+        ],
       ),
     );
   }
 
-  // ── Storage Card ─────────────────────────────────────────────
   Widget _buildStorageCard() {
-    return Obx(() {
-      final pct = (controller.usedStorageMB.value / (5 * 1024))
-          .clamp(0.0, 1.0);
-      return Container(
-        padding: const EdgeInsets.all(20),
+    return GlassCard(
+      child: Container(
+        padding: EdgeInsets.all(20.w),
         decoration: BoxDecoration(
-          gradient: const LinearGradient(
+          gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
-            colors: [AppConstants.gradientStart, AppConstants.gradientEnd],
+            colors: [
+              AppTheme.primary.withOpacity(0.2),
+              AppTheme.secondary.withOpacity(0.1),
+            ],
           ),
-          borderRadius: BorderRadius.circular(22),
-          boxShadow: [
-            BoxShadow(
-              color: AppConstants.primaryColor.withOpacity(0.35),
-              blurRadius: 24,
-              offset: const Offset(0, 10),
-            ),
-          ],
+          borderRadius: BorderRadius.circular(24.r),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -159,312 +58,477 @@ class DashboardScreen extends GetView<HomeController> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Text('مساحة التخزين',
-                    style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600)),
+                Row(
+                  children: [
+                    Container(
+                      padding: EdgeInsets.all(10.w),
+                      decoration: BoxDecoration(
+                        gradient: AppTheme.primaryGradient,
+                        borderRadius: BorderRadius.circular(14.r),
+                      ),
+                      child: Icon(Iconsax.cloud, color: Colors.white, size: 24.sp),
+                    ),
+                    SizedBox(width: 12.w),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'مساحة التخزين',
+                          style: GoogleFonts.poppins(
+                            color: AppTheme.textPrimary,
+                            fontSize: 16.sp,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        Obx(() => Text(
+                          '${controller.usedStorage.value} GB من 5 GB',
+                          style: GoogleFonts.poppins(
+                            color: AppTheme.textSecondary,
+                            fontSize: 12.sp,
+                          ),
+                        )),
+                      ],
+                    ),
+                  ],
+                ),
                 Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 12, vertical: 5),
+                  padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 6.h),
                   decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.2),
-                    borderRadius: BorderRadius.circular(20),
+                    color: AppTheme.primary.withOpacity(0.2),
+                    borderRadius: BorderRadius.circular(20.r),
                   ),
                   child: Row(
-                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Icon(Icons.upload_file_rounded,
-                          color: Colors.white, size: 14),
-                      const SizedBox(width: 4),
+                      Icon(Iconsax.arrow_up, color: AppTheme.primary, size: 14.sp),
+                      SizedBox(width: 4.w),
                       Text(
-                          '${controller.totalFiles.value} ملف',
-                          style: const TextStyle(
-                              color: Colors.white, fontSize: 12)),
+                        '12%',
+                        style: GoogleFonts.poppins(
+                          color: AppTheme.primary,
+                          fontSize: 12.sp,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
                     ],
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 18),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      controller.usedStorageDisplay,
-                      style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 30,
-                          fontWeight: FontWeight.bold),
-                    ),
-                    Text(
-                      'تخزين لا محدود ∞',
-                      style: TextStyle(
-                          color: Colors.white.withOpacity(0.75),
-                          fontSize: 12),
-                    ),
-                  ],
-                ),
-                const Icon(Icons.cloud_rounded,
-                    color: Colors.white, size: 52),
-              ],
-            ),
-            const SizedBox(height: 16),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: LinearProgressIndicator(
-                value: pct,
-                minHeight: 8,
-                backgroundColor: Colors.white.withOpacity(0.25),
-                valueColor:
-                    const AlwaysStoppedAnimation<Color>(Colors.white),
+            SizedBox(height: 16.h),
+            Container(
+              height: 8.h,
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(10.r),
               ),
+              child: Obx(() => FractionallySizedBox(
+                widthFactor: controller.storagePercentage.value / 100,
+                child: Container(
+                  decoration: BoxDecoration(
+                    gradient: AppTheme.primaryGradient,
+                    borderRadius: BorderRadius.circular(10.r),
+                  ),
+                ),
+              )),
             ),
-            const SizedBox(height: 6),
+            SizedBox(height: 16.h),
+            Obx(() {
+              final s = controller.stats;
+              return Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  _buildStorageStat(Iconsax.document, 'الملفات', '${s['docs'] ?? 0}'),
+                  _buildStorageStat(Iconsax.gallery, 'الصور', '${s['images'] ?? 0}'),
+                  _buildStorageStat(Iconsax.video, 'الفيديوهات', '${s['videos'] ?? 0}'),
+                ],
+              );
+            }),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStorageStat(IconData icon, String label, String count) {
+    return Column(
+      children: [
+        Row(
+          children: [
+            Icon(icon, color: AppTheme.textSecondary, size: 16.sp),
+            SizedBox(width: 4.w),
             Text(
-              'Telegram Cloud — مساحة غير محدودة',
-              style: TextStyle(
-                  color: Colors.white.withOpacity(0.65), fontSize: 11),
+              count,
+              style: GoogleFonts.poppins(
+                color: AppTheme.textPrimary,
+                fontSize: 14.sp,
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ],
         ),
-      );
-    });
+        Text(
+          label,
+          style: GoogleFonts.poppins(
+            color: AppTheme.textTertiary,
+            fontSize: 10.sp,
+          ),
+        ),
+      ],
+    );
   }
 
-  // ── Stats Row ─────────────────────────────────────────────────
-  Widget _buildStatsRow() {
+  Widget _buildQuickStats() {
     return Obx(() {
       final s = controller.stats;
       return Row(
         children: [
           Expanded(
-              child: StatsCard(
-            icon: Icons.image_rounded,
-            label: 'الصور',
-            value: '${s['images']}',
-            color: AppConstants.greenColor,
-          )),
-          const SizedBox(width: 10),
+            child: GlassCard(
+              child: Padding(
+                padding: EdgeInsets.all(16.w),
+                child: Column(
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          padding: EdgeInsets.all(8.w),
+                          decoration: BoxDecoration(
+                            color: AppTheme.primary.withOpacity(0.2),
+                            borderRadius: BorderRadius.circular(12.r),
+                          ),
+                          child: Icon(Iconsax.clock, color: AppTheme.primary, size: 20.sp),
+                        ),
+                        const Spacer(),
+                        Container(
+                          padding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 4.h),
+                          decoration: BoxDecoration(
+                            color: Colors.green.withOpacity(0.2),
+                            borderRadius: BorderRadius.circular(20.r),
+                          ),
+                          child: Text(
+                            '+12%',
+                            style: GoogleFonts.poppins(
+                              color: Colors.green,
+                              fontSize: 10.sp,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    SizedBox(height: 8.h),
+                    Text(
+                      '${s['total'] ?? 0}',
+                      style: GoogleFonts.poppins(
+                        color: AppTheme.textPrimary,
+                        fontSize: 24.sp,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    Text(
+                      'إجمالي الملفات',
+                      style: GoogleFonts.poppins(
+                        color: AppTheme.textSecondary,
+                        fontSize: 12.sp,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          SizedBox(width: 12.w),
           Expanded(
-              child: StatsCard(
-            icon: Icons.videocam_rounded,
-            label: 'الفيديو',
-            value: '${s['videos']}',
-            color: AppConstants.redColor,
-          )),
-          const SizedBox(width: 10),
-          Expanded(
-              child: StatsCard(
-            icon: Icons.music_note_rounded,
-            label: 'الموسيقى',
-            value: '${s['audios']}',
-            color: AppConstants.purpleColor,
-          )),
-          const SizedBox(width: 10),
-          Expanded(
-              child: StatsCard(
-            icon: Icons.description_rounded,
-            label: 'ملفات',
-            value: '${s['docs']}',
-            color: AppConstants.orangeColor,
-          )),
+            child: GlassCard(
+              child: Padding(
+                padding: EdgeInsets.all(16.w),
+                child: Column(
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          padding: EdgeInsets.all(8.w),
+                          decoration: BoxDecoration(
+                            color: AppTheme.secondary.withOpacity(0.2),
+                            borderRadius: BorderRadius.circular(12.r),
+                          ),
+                          child: Icon(Iconsax.share, color: AppTheme.secondary, size: 20.sp),
+                        ),
+                        const Spacer(),
+                        Container(
+                          padding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 4.h),
+                          decoration: BoxDecoration(
+                            color: Colors.green.withOpacity(0.2),
+                            borderRadius: BorderRadius.circular(20.r),
+                          ),
+                          child: Text(
+                            '+8%',
+                            style: GoogleFonts.poppins(
+                              color: Colors.green,
+                              fontSize: 10.sp,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    SizedBox(height: 8.h),
+                    Text(
+                      '${s['audios'] ?? 0}',
+                      style: GoogleFonts.poppins(
+                        color: AppTheme.textPrimary,
+                        fontSize: 24.sp,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    Text(
+                      'الملفات الصوتية',
+                      style: GoogleFonts.poppins(
+                        color: AppTheme.textSecondary,
+                        fontSize: 12.sp,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
         ],
       );
     });
   }
 
-  // ── Quick Actions ─────────────────────────────────────────────
-  Widget _buildQuickActions() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text('إجراءات سريعة',
-            style: TextStyle(
-                color: Colors.white,
-                fontSize: 17,
-                fontWeight: FontWeight.bold)),
-        const SizedBox(height: 12),
-        GridView.count(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          crossAxisCount: 4,
-          crossAxisSpacing: 8,
-          mainAxisSpacing: 8,
+  Widget _buildRecentActivity() {
+    return Obx(() {
+      final recentFiles = controller.allFiles.take(3).toList();
+      if (recentFiles.isEmpty) {
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            QuickActionWidget(
-              icon: Icons.upload_file_rounded,
-              label: 'رفع',
-              color: AppConstants.primaryColor,
-              onTap: () => Get.to(() => const UploadScreen(),
-                  transition: Transition.downToUp),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'النشاط الأخير',
+                  style: GoogleFonts.poppins(
+                    color: AppTheme.textPrimary,
+                    fontSize: 18.sp,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
             ),
-            QuickActionWidget(
-              icon: Icons.photo_library_rounded,
-              label: 'الصور',
-              color: AppConstants.greenColor,
-              onTap: () => Get.to(
-                  () => const FilesScreen(filterType: FileType.image),
-                  transition: Transition.rightToLeft),
-            ),
-            QuickActionWidget(
-              icon: Icons.video_library_rounded,
-              label: 'الفيديو',
-              color: AppConstants.redColor,
-              onTap: () => Get.to(
-                  () => const FilesScreen(filterType: FileType.video),
-                  transition: Transition.rightToLeft),
-            ),
-            QuickActionWidget(
-              icon: Icons.library_music_rounded,
-              label: 'موسيقى',
-              color: AppConstants.purpleColor,
-              onTap: () => Get.to(
-                  () => const FilesScreen(filterType: FileType.audio),
-                  transition: Transition.rightToLeft),
-            ),
+            SizedBox(height: 12.h),
+            ...List.generate(3, (index) => _buildMockActivityItem(index)),
           ],
-        ),
-      ],
-    );
-  }
-
-  // ── Recent Files ──────────────────────────────────────────────
-  Widget _buildRecentFiles() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            const Text('آخر الملفات',
-                style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 17,
-                    fontWeight: FontWeight.bold)),
-            TextButton(
-              onPressed: () => controller.currentIndex.value = 1,
-              child: const Text('عرض الكل',
-                  style: TextStyle(
-                      color: AppConstants.primaryColor, fontSize: 13)),
-            ),
-          ],
-        ),
-        const SizedBox(height: 4),
-        Obx(() {
-          final recent = controller.allFiles.take(5).toList();
-          if (recent.isEmpty) {
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(32),
-                child: Column(
-                  children: [
-                    Icon(Icons.cloud_upload_outlined,
-                        size: 64, color: Colors.grey[700]),
-                    const SizedBox(height: 12),
-                    Text('لا توجد ملفات بعد\nارفع أول ملف الآن! 🚀',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                            color: Colors.grey[500], height: 1.7)),
-                  ],
+        );
+      }
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'النشاط الأخير',
+                style: GoogleFonts.poppins(
+                  color: AppTheme.textPrimary,
+                  fontSize: 18.sp,
+                  fontWeight: FontWeight.w600,
                 ),
               ),
-            );
-          }
-          return Container(
-            decoration: BoxDecoration(
-              color: AppConstants.cardDark,
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: ListView.separated(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              itemCount: recent.length,
-              separatorBuilder: (_, __) => const Divider(
-                  height: 1,
-                  color: Color(0xFF2C3A4A),
-                  indent: 16,
-                  endIndent: 16),
-              itemBuilder: (_, i) => RecentFileItem(
-                  file: recent[i], onRefresh: controller.loadFiles),
-            ),
-          );
-        }),
-      ],
-    );
-  }
-
-  // ── Notifications Dialog ──────────────────────────────────────
-  void _showNotifications() {
-    Get.dialog(
-      Dialog(
-        backgroundColor: AppConstants.cardDark,
-        shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text('📬 الإشعارات',
-                  style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold)),
-              const SizedBox(height: 16),
-              _notifItem(Icons.folder_rounded, AppConstants.primaryColor,
-                  'تم رفع ملف جديد', 'منذ 5 دقائق'),
-              const Divider(color: Color(0xFF2C3A4A)),
-              _notifItem(Icons.sync_rounded, AppConstants.greenColor,
-                  'تمت المزامنة بنجاح', 'منذ ساعة'),
-              const Divider(color: Color(0xFF2C3A4A)),
-              _notifItem(Icons.cloud_done_rounded, AppConstants.orangeColor,
-                  'تم النسخ الاحتياطي', 'منذ يوم'),
-              const SizedBox(height: 16),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: Get.back,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppConstants.primaryColor,
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12)),
-                    padding: const EdgeInsets.symmetric(vertical: 12),
+              TextButton(
+                onPressed: () => controller.currentIndex.value = 1,
+                style: TextButton.styleFrom(
+                  foregroundColor: AppTheme.primary,
+                ),
+                child: Text(
+                  'عرض الكل',
+                  style: GoogleFonts.poppins(
+                    fontSize: 12.sp,
+                    fontWeight: FontWeight.w500,
                   ),
-                  child: const Text('إغلاق',
-                      style:
-                          TextStyle(color: Colors.white, fontSize: 15)),
                 ),
               ),
             ],
           ),
+          SizedBox(height: 12.h),
+          ...recentFiles.map((file) => _buildActualFileItem(file)),
+        ],
+      );
+    });
+  }
+
+  Widget _buildActualFileItem(CloudFile file) {
+    IconData icon = Iconsax.document_text;
+    if (file.type == FileType.image) icon = Iconsax.gallery;
+    if (file.type == FileType.video) icon = Iconsax.video_play;
+    if (file.type == FileType.audio) icon = Iconsax.music;
+
+    final mb = file.sizeBytes / (1024 * 1024);
+    final sizeStr = mb >= 1024
+        ? '${(mb / 1024).toStringAsFixed(2)} GB'
+        : '${mb.toStringAsFixed(1)} MB';
+
+    return GlassCard(
+      margin: EdgeInsets.only(bottom: 8.h),
+      child: ListTile(
+        leading: Container(
+          padding: EdgeInsets.all(8.w),
+          decoration: BoxDecoration(
+            color: AppTheme.primary.withOpacity(0.15),
+            borderRadius: BorderRadius.circular(12.r),
+          ),
+          child: Icon(icon, color: AppTheme.primary, size: 20.sp),
+        ),
+        title: Text(
+          file.name,
+          style: GoogleFonts.poppins(
+            color: AppTheme.textPrimary,
+            fontSize: 14.sp,
+            fontWeight: FontWeight.w500,
+          ),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        subtitle: Text(
+          '$sizeStr • ${_timeago(file.uploadedAt)}',
+          style: GoogleFonts.poppins(
+            color: AppTheme.textSecondary,
+            fontSize: 11.sp,
+          ),
+        ),
+        trailing: Icon(Iconsax.arrow_right_1, color: AppTheme.textSecondary, size: 16.sp),
+      ),
+    );
+  }
+
+  String _timeago(DateTime date) {
+    final diff = DateTime.now().difference(date);
+    if (diff.inMinutes < 1) return 'الآن';
+    if (diff.inMinutes < 60) return 'منذ ${diff.inMinutes} دقيقة';
+    if (diff.inHours < 24) return 'منذ ${diff.inHours} ساعة';
+    return 'منذ ${diff.inDays} يوم';
+  }
+
+  Widget _buildMockActivityItem(int index) {
+    final activities = [
+      {'name': 'تقرير المبيعات.pdf', 'time': 'منذ 5 دقائق', 'size': '2.4 MB', 'icon': Iconsax.document_text},
+      {'name': 'صورة_المنتج.jpg', 'time': 'منذ ساعة', 'size': '4.8 MB', 'icon': Iconsax.gallery},
+      {'name': 'فيديو_تعليمي.mp4', 'time': 'منذ 3 ساعات', 'size': '15.2 MB', 'icon': Iconsax.video_play},
+    ];
+    
+    final activity = activities[index];
+    
+    return GlassCard(
+      margin: EdgeInsets.only(bottom: 8.h),
+      child: ListTile(
+        leading: Container(
+          padding: EdgeInsets.all(8.w),
+          decoration: BoxDecoration(
+            color: AppTheme.primary.withOpacity(0.15),
+            borderRadius: BorderRadius.circular(12.r),
+          ),
+          child: Icon(activity['icon'] as IconData, color: AppTheme.primary, size: 20.sp),
+        ),
+        title: Text(
+          activity['name'] as String,
+          style: GoogleFonts.poppins(
+            color: AppTheme.textPrimary,
+            fontSize: 14.sp,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        subtitle: Text(
+          '${activity['size']} • ${activity['time']}',
+          style: GoogleFonts.poppins(
+            color: AppTheme.textSecondary,
+            fontSize: 11.sp,
+          ),
+        ),
+        trailing: IconButton(
+          onPressed: () {},
+          icon: Icon(Iconsax.more, color: AppTheme.textSecondary, size: 20.sp),
         ),
       ),
     );
   }
 
-  Widget _notifItem(IconData icon, Color color, String title, String sub) {
-    return ListTile(
-      contentPadding: EdgeInsets.zero,
-      leading: Container(
-        padding: const EdgeInsets.all(8),
-        decoration: BoxDecoration(
-            color: color.withOpacity(0.15),
-            borderRadius: BorderRadius.circular(10)),
-        child: Icon(icon, color: color, size: 20),
+  Widget _buildQuickActions() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'إجراءات سريعة',
+          style: GoogleFonts.poppins(
+            color: AppTheme.textPrimary,
+            fontSize: 18.sp,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        SizedBox(height: 12.h),
+        Row(
+          children: [
+            _buildActionCard(Iconsax.document_upload, 'رفع ملف', AppTheme.primary, () {
+              Get.to(() => const UploadScreen(), transition: Transition.downToUp);
+            }),
+            SizedBox(width: 12.w),
+            _buildActionCard(Iconsax.folder_add, 'مجلد جديد', AppTheme.secondary, () {
+              Get.snackbar(
+                'مجلد جديد',
+                'هذه الميزة ستتوفر قريباً!',
+                snackPosition: SnackPosition.BOTTOM,
+                backgroundColor: AppTheme.cardDark,
+                colorText: AppTheme.textPrimary,
+              );
+            }),
+            SizedBox(width: 12.w),
+            _buildActionCard(Iconsax.scan, 'مسح ضوئي', AppTheme.tertiary, () {
+              Get.snackbar(
+                'مسح ضوئي',
+                'هذه الميزة ستتوفر قريباً!',
+                snackPosition: SnackPosition.BOTTOM,
+                backgroundColor: AppTheme.cardDark,
+                colorText: AppTheme.textPrimary,
+              );
+            }),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildActionCard(IconData icon, String label, Color color, VoidCallback onTap) {
+    return Expanded(
+      child: GestureDetector(
+        onTap: onTap,
+        child: GlassCard(
+          child: Container(
+            padding: EdgeInsets.symmetric(vertical: 16.h),
+            child: Column(
+              children: [
+                Container(
+                  padding: EdgeInsets.all(12.w),
+                  decoration: BoxDecoration(
+                    color: color.withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(16.r),
+                  ),
+                  child: Icon(icon, color: color, size: 24.sp),
+                ),
+                SizedBox(height: 8.h),
+                Text(
+                  label,
+                  style: GoogleFonts.poppins(
+                    color: AppTheme.textSecondary,
+                    fontSize: 11.sp,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
-      title: Text(title,
-          style: const TextStyle(color: Colors.white, fontSize: 13)),
-      subtitle: Text(sub,
-          style: TextStyle(color: Colors.grey[500], fontSize: 11)),
-      trailing: Container(
-          width: 8,
-          height: 8,
-          decoration: BoxDecoration(
-              color: color, shape: BoxShape.circle)),
     );
   }
 }

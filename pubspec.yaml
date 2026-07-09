@@ -29,6 +29,8 @@ dependencies:
   google_fonts: ^6.2.1
   flutter_animate: ^4.5.0
   percent_indicator: ^4.2.3
+  iconsax: ^0.0.8
+  flutter_screenutil: ^5.9.0
 
   # ── State / Storage ───────────────────────────────────────────
   get: ^4.6.6
