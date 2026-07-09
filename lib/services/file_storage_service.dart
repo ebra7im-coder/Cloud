@@ -76,6 +76,11 @@ class FileStorageService {
     await _box.delete(id);
   }
 
+  // ── Clear all local database ─────────────────────────────────────
+  Future<void> clearAll() async {
+    await _box.clear();
+  }
+
   // ── Stats ────────────────────────────────────────────────────────
   Map<String, dynamic> getStats() {
     final all  = _box.values.toList();
