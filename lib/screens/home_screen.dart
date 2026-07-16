@@ -20,7 +20,9 @@ class HomeScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    Get.put(HomeController());
+    if (!Get.isRegistered<HomeController>()) {
+      Get.put(HomeController());
+    }
     return const HomeView();
   }
 }
@@ -55,7 +57,7 @@ class HomeView extends GetView<HomeController> {
         ),
       ),
       bottomNavigationBar: _buildBottomNav(),
-      floatingActionButton: _buildFAB(),
+      floatingActionButton: Obx(() => _buildFAB()),
       floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
     );
   }
@@ -253,27 +255,36 @@ class HomeView extends GetView<HomeController> {
     );
   }
 
-  Widget _buildFAB() {
-    return Container(
-      margin: EdgeInsets.only(bottom: 8.h),
-      decoration: BoxDecoration(
-        gradient: AppTheme.primaryGradient,
-        shape: BoxShape.circle,
-        boxShadow: [
-          BoxShadow(
-            color: AppTheme.primary.withOpacity(0.4),
-            blurRadius: 20,
-            offset: const Offset(0, 8),
-          ),
-        ],
-      ),
-      child: FloatingActionButton(
-        onPressed: () {
-          Get.to(() => const UploadScreen(), transition: Transition.downToUp);
-        },
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        child: const Icon(Iconsax.add, color: Colors.white, size: 28),
+  Widget? _buildFAB() {
+    // إخفاء الـ FAB في شاشة البحث (Index 2) وشاشة الملف الشخصي (Index 3)
+    final hiddenScreens = [2, 3];
+    if (hiddenScreens.contains(controller.currentIndex.value)) {
+      return null;
+    }
+    
+    return Hero(
+      tag: 'upload_fab',
+      child: Container(
+        margin: EdgeInsets.only(bottom: 8.h),
+        decoration: BoxDecoration(
+          gradient: AppTheme.primaryGradient,
+          shape: BoxShape.circle,
+          boxShadow: [
+            BoxShadow(
+              color: AppTheme.primary.withOpacity(0.4),
+              blurRadius: 20,
+              offset: const Offset(0, 8),
+            ),
+          ],
+        ),
+        child: FloatingActionButton(
+          onPressed: () {
+            Get.to(() => const UploadScreen(), transition: Transition.downToUp);
+          },
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          child: const Icon(Iconsax.add, color: Colors.white, size: 28),
+        ),
       ),
     );
   }
