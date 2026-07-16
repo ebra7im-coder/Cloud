@@ -57,7 +57,7 @@ class HomeView extends GetView<HomeController> {
         ),
       ),
       bottomNavigationBar: _buildBottomNav(),
-      floatingActionButton: Obx(() => _buildFAB()),
+      floatingActionButton: Obx(() => _buildFAB() ?? const SizedBox.shrink()),
       floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
     );
   }
