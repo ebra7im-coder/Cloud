@@ -90,6 +90,20 @@ class CloudFile extends HiveObject {
     }
   }
 
+  String get size => sizeFormatted;
+
+  String get modifiedDate => '${uploadedAt.year}/${uploadedAt.month.toString().padLeft(2, '0')}/${uploadedAt.day.toString().padLeft(2, '0')}';
+
+  String get typeString {
+    switch (type) {
+      case FileType.image:    return 'image';
+      case FileType.video:    return 'video';
+      case FileType.audio:    return 'music';
+      case FileType.document: return 'document';
+      default:                return 'document';
+    }
+  }
+
   static FileType detectType(String filename) {
     final ext = filename.split('.').last.toLowerCase();
     if (['jpg','jpeg','png','gif','webp','bmp','heic','heif'].contains(ext)) return FileType.image;

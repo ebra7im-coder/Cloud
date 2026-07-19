@@ -10,6 +10,7 @@ class AppConstants {
   // ── Hive ──────────────────────────────────────────────────────
   static const String filesBox    = 'cloud_files';
   static const String settingsBox = 'settings';
+  static const String cacheBox    = 'cache';
 
   // ── Colors ────────────────────────────────────────────────────
   static const Color primaryColor   = Color(0xFF2AABEE);
