@@ -97,33 +97,33 @@ class DesktopService extends GetxService with TrayListener {
     try {
       await hotKeyManager.register(
         HotKey(
-          key: KeyCode.space,
+          KeyCode.space,
           modifiers: [KeyModifier.control, KeyModifier.shift],
           scope: HotKeyScope.system,
         ),
-        onPress: () {
+        keyDownHandler: (hotKey) {
           _toggleAppVisibility();
         },
       );
       
       await hotKeyManager.register(
         HotKey(
-          key: KeyCode.keyU,
+          KeyCode.keyU,
           modifiers: [KeyModifier.control, KeyModifier.shift],
           scope: HotKeyScope.system,
         ),
-        onPress: () {
+        keyDownHandler: (hotKey) {
           _uploadFile();
         },
       );
       
       await hotKeyManager.register(
         HotKey(
-          key: KeyCode.keyS,
+          KeyCode.keyS,
           modifiers: [KeyModifier.control, KeyModifier.shift],
           scope: HotKeyScope.system,
         ),
-        onPress: () {
+        keyDownHandler: (hotKey) {
           _searchFiles();
         },
       );
