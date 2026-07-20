@@ -138,6 +138,9 @@ jobs:
           mkdir -Force assets/icons
           mkdir -Force assets/images
 
+      - name: create platform directories
+        run: flutter create --platforms=windows .
+
       - name: build Windows Release
         run: flutter build windows --release
 
@@ -176,6 +179,9 @@ jobs:
 
       - name: create asset dirs
         run: mkdir -p assets/icons assets/images
+
+      - name: create platform directories
+        run: flutter create --platforms=linux .
 
       - name: build Linux Release
         run: flutter build linux --release
