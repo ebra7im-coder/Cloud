@@ -196,7 +196,7 @@ class FileGridView extends GetView<FileController> {
   }
 
   Gradient _getFileGradient(CloudFile file) {
-    final colors = {
+    final Map<String, List<Color>> colors = {
       'pdf': [Colors.red, Colors.orange],
       'image': [Colors.purple, Colors.pink],
       'video': [Colors.blue, Colors.cyan],
@@ -237,7 +237,7 @@ class FileGridView extends GetView<FileController> {
           children: [
             _buildBottomSheetItem(Iconsax.eye, 'معاينة', () => controller.previewFile(file)),
             _buildBottomSheetItem(Iconsax.share, 'مشاركة', () => controller.shareFile(file)),
-            _buildBottomSheetItem(Iconsax.download, 'تحميل', () => controller.downloadFile(file)),
+            _buildBottomSheetItem(Icons.download, 'تحميل', () => controller.downloadFile(file)),
             _buildBottomSheetItem(Iconsax.edit, 'إعادة تسمية', () => controller.renameFile(file)),
             _buildBottomSheetItem(Iconsax.star, 'المفضلة', () => controller.toggleFavorite(file)),
             _buildBottomSheetItem(Iconsax.trash, 'حذف', () => controller.deleteFile(file), isDanger: true),

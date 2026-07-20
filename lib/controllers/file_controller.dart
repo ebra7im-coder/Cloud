@@ -2,7 +2,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:file_picker/file_picker.dart';
+import 'package:file_picker/file_picker.dart' as fp;
 import 'package:path/path.dart' as path;
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:open_filex/open_filex.dart';
@@ -38,9 +38,9 @@ class FileController extends GetxController {
 
   Future<void> pickAndUploadFiles() async {
     try {
-      final result = await FilePicker.platform.pickFiles(
+      final result = await fp.FilePicker.platform.pickFiles(
         allowMultiple: true,
-        type: FileType.any,
+        type: fp.FileType.any,
       );
       
       if (result != null) {
@@ -118,7 +118,7 @@ class FileController extends GetxController {
 
   Future<void> downloadFile(CloudFile file) async {
     try {
-      final result = await FilePicker.platform.saveFile(
+      final result = await fp.FilePicker.platform.saveFile(
         dialogTitle: 'حفظ الملف',
         fileName: file.name,
       );

@@ -159,7 +159,7 @@ class DesktopTitleBar extends StatelessWidget {
               ),
               const SizedBox(width: 4),
               _buildWindowButton(
-                onPressed: () => windowManager.maximizeOrUnmaximize(),
+                onPressed: () async { if (await windowManager.isMaximized()) { await windowManager.unmaximize(); } else { await windowManager.maximize(); } },
                 icon: Icons.crop_square,
                 color: Colors.green,
               ),
@@ -211,7 +211,7 @@ class DesktopTitleBar extends StatelessWidget {
               ),
               const SizedBox(width: 4),
               _buildWindowButton(
-                onPressed: () => windowManager.maximizeOrUnmaximize(),
+                onPressed: () async { if (await windowManager.isMaximized()) { await windowManager.unmaximize(); } else { await windowManager.maximize(); } },
                 icon: Icons.crop_square,
                 color: Colors.green,
               ),

@@ -2,7 +2,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:file_picker/file_picker.dart';
+import 'package:file_picker/file_picker.dart' as fp;
 import 'package:path/path.dart' as path;
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:window_manager/window_manager.dart';
@@ -97,7 +97,7 @@ class DesktopService extends GetxService with TrayListener {
     try {
       await hotKeyManager.register(
         HotKey(
-          KeyCode.space,
+          keyCode: KeyCode.space,
           modifiers: [KeyModifier.control, KeyModifier.shift],
           scope: HotKeyScope.system,
         ),
@@ -108,7 +108,7 @@ class DesktopService extends GetxService with TrayListener {
       
       await hotKeyManager.register(
         HotKey(
-          KeyCode.keyU,
+          keyCode: KeyCode.keyU,
           modifiers: [KeyModifier.control, KeyModifier.shift],
           scope: HotKeyScope.system,
         ),
@@ -119,7 +119,7 @@ class DesktopService extends GetxService with TrayListener {
       
       await hotKeyManager.register(
         HotKey(
-          KeyCode.keyS,
+          keyCode: KeyCode.keyS,
           modifiers: [KeyModifier.control, KeyModifier.shift],
           scope: HotKeyScope.system,
         ),
@@ -214,9 +214,9 @@ class DesktopService extends GetxService with TrayListener {
 
   void _uploadFile() async {
     try {
-      final result = await FilePicker.platform.pickFiles(
+      final result = await fp.FilePicker.platform.pickFiles(
         allowMultiple: true,
-        type: FileType.any,
+        type: fp.FileType.any,
       );
       
       if (result != null) {
