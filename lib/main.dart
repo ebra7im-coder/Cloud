@@ -6,7 +6,6 @@ import 'package:get/get.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:window_manager/window_manager.dart';
-import 'package:bitsdojo_window/bitsdojo_window.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:file_picker/file_picker.dart';
@@ -22,12 +21,13 @@ import 'bindings/app_bindings.dart';
 import 'services/desktop_service.dart';
 import 'services/storage_service.dart';
 import 'utils/translations.dart';
+import 'services/telegram_service.dart';
 
 void main() async {
-  WidgetsFlutterBinding.ensureInitialized();
+  WidgetsBinding widgetsBinding = WidgetsFlutterBinding.ensureInitialized();
   
   // إخفاء شاشة البداية
-  FlutterNativeSplash.preserve(widgetsBinding: WidgetsFlutterBinding.ensureInitialized());
+  FlutterNativeSplash.preserve(widgetsBinding: widgetsBinding);
   
   // تهيئة نافذة التطبيق
   await _initializeWindow();
@@ -38,6 +38,12 @@ void main() async {
   // تهيئة خدمات سطح المكتب
   await _initializeDesktopServices();
   
+  try {
+    await TelegramService.instance.initialize();
+  } catch (e) {
+    debugPrint('Telegram Service Init error: $e');
+  }
+
   runApp(const CloudGramApp());
   
   // إظهار التطبيق بعد التهيئة
@@ -60,7 +66,6 @@ Future<void> _initializeWindow() async {
     await windowManager.waitUntilReadyToShow(windowOptions, () async {
       await windowManager.show();
       await windowManager.focus();
-      await windowManager.setAsFrameless();
     });
   }
 }

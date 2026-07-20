@@ -45,7 +45,6 @@ dependencies:
 
   # ── Desktop & Advanced ──────────────────────────────────────────
   window_manager: ^0.3.8
-  bitsdojo_window: ^0.1.5
   desktop_drop: ^0.4.4
   file_picker: ^8.0.0
   open_filex: ^4.3.4

@@ -144,85 +144,87 @@ class DesktopTitleBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      height: 40.h,
-      color: AppTheme.surfaceDark,
-      child: Row(
-        children: [
-          if (Platform.isWindows) ...[
-            const SizedBox(width: 8),
-            _buildWindowButton(
-              onPressed: () => windowManager.minimize(),
-              icon: Icons.remove,
-              color: Colors.amber,
-            ),
-            const SizedBox(width: 4),
-            _buildWindowButton(
-              onPressed: () => windowManager.maximizeOrUnmaximize(),
-              icon: Icons.crop_square,
-              color: Colors.green,
-            ),
-            const SizedBox(width: 4),
-            _buildWindowButton(
-              onPressed: () => windowManager.close(),
-              icon: Icons.close,
-              color: Colors.red,
-            ),
-          ],
-          
-          const Spacer(),
-          
-          // عنوان التطبيق
-          Row(
-            children: [
-              Container(
-                width: 24.w,
-                height: 24.w,
-                decoration: BoxDecoration(
-                  gradient: AppTheme.primaryGradient,
-                  borderRadius: BorderRadius.circular(6.r),
-                ),
-                child: const Icon(
-                  Iconsax.cloud,
-                  color: Colors.white,
-                  size: 16,
-                ),
+    return DragToMoveArea(
+      child: Container(
+        height: 40.h,
+        color: AppTheme.surfaceDark,
+        child: Row(
+          children: [
+            if (Platform.isWindows) ...[
+              const SizedBox(width: 8),
+              _buildWindowButton(
+                onPressed: () => windowManager.minimize(),
+                icon: Icons.remove,
+                color: Colors.amber,
               ),
-              SizedBox(width: 8.w),
-              Text(
-                'CloudVault',
-                style: GoogleFonts.poppins(
-                  color: AppTheme.textPrimary,
-                  fontSize: 14.sp,
-                  fontWeight: FontWeight.w600,
-                ),
+              const SizedBox(width: 4),
+              _buildWindowButton(
+                onPressed: () => windowManager.maximizeOrUnmaximize(),
+                icon: Icons.crop_square,
+                color: Colors.green,
+              ),
+              const SizedBox(width: 4),
+              _buildWindowButton(
+                onPressed: () => windowManager.close(),
+                icon: Icons.close,
+                color: Colors.red,
               ),
             ],
-          ),
-          
-          const Spacer(),
-          
-          if (Platform.isLinux) ...[
-            _buildWindowButton(
-              onPressed: () => windowManager.minimize(),
-              icon: Icons.remove,
-              color: Colors.amber,
+            
+            const Spacer(),
+            
+            // عنوان التطبيق
+            Row(
+              children: [
+                Container(
+                  width: 24.w,
+                  height: 24.w,
+                  decoration: BoxDecoration(
+                    gradient: AppTheme.primaryGradient,
+                    borderRadius: BorderRadius.circular(6.r),
+                  ),
+                  child: const Icon(
+                    Iconsax.cloud,
+                    color: Colors.white,
+                    size: 16,
+                  ),
+                ),
+                SizedBox(width: 8.w),
+                Text(
+                  'CloudVault',
+                  style: GoogleFonts.poppins(
+                    color: AppTheme.textPrimary,
+                    fontSize: 14.sp,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(width: 4),
-            _buildWindowButton(
-              onPressed: () => windowManager.maximizeOrUnmaximize(),
-              icon: Icons.crop_square,
-              color: Colors.green,
-            ),
-            const SizedBox(width: 4),
-            _buildWindowButton(
-              onPressed: () => windowManager.close(),
-              icon: Icons.close,
-              color: Colors.red,
-            ),
-            const SizedBox(width: 8),
+            
+            const Spacer(),
+            
+            if (Platform.isLinux) ...[
+              _buildWindowButton(
+                onPressed: () => windowManager.minimize(),
+                icon: Icons.remove,
+                color: Colors.amber,
+              ),
+              const SizedBox(width: 4),
+              _buildWindowButton(
+                onPressed: () => windowManager.maximizeOrUnmaximize(),
+                icon: Icons.crop_square,
+                color: Colors.green,
+              ),
+              const SizedBox(width: 4),
+              _buildWindowButton(
+                onPressed: () => windowManager.close(),
+                icon: Icons.close,
+                color: Colors.red,
+              ),
+              const SizedBox(width: 8),
+            ],
           ],
-        ],
+        ),
       ),
     );
   }
