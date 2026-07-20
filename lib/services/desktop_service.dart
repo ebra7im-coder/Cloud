@@ -8,16 +8,14 @@ import 'package:desktop_drop/desktop_drop.dart';
 import 'package:window_manager/window_manager.dart';
 import 'package:hotkey_manager/hotkey_manager.dart';
 import 'package:tray_manager/tray_manager.dart';
-import 'package:system_tray/system_tray.dart';
 import '../controllers/file_controller.dart';
 import '../models/file_model.dart';
 
-class DesktopService extends GetxService implements TrayListener {
+class DesktopService extends GetxService with TrayListener {
   DesktopService._();
   static final DesktopService instance = DesktopService._();
 
   FileController get fileController => Get.find<FileController>();
-  final SystemTray _systemTray = SystemTray();
   bool _isInitialized = false;
 
   Future<void> initialize() async {
@@ -41,50 +39,52 @@ class DesktopService extends GetxService implements TrayListener {
           ? 'assets/icons/app_icon.ico'
           : 'assets/icons/app_icon.png';
       
-      await _systemTray.initSystemTray(
-        title: "CloudVault",
-        iconPath: appIcon,
+      await trayManager.setIcon(appIcon);
+      
+      final menu = Menu(
+        items: [
+          MenuItem(key: 'open_app', label: 'فتح التطبيق'),
+          MenuItem(key: 'upload_file', label: 'رفع ملف'),
+          MenuItem(key: 'share_screen', label: 'مشاركة شاشة'),
+          MenuItem.separator(),
+          MenuItem(key: 'settings', label: 'الإعدادات'),
+          MenuItem.separator(),
+          MenuItem(key: 'exit', label: 'خروج'),
+        ],
       );
       
-      await _systemTray.setContextMenu([
-        SystemMenuItem(label: 'فتح التطبيق', enabled: true),
-        SystemMenuItem(label: 'رفع ملف', enabled: true),
-        SystemMenuItem(label: 'مشاركة شاشة', enabled: true),
-        SystemMenuItem.separator(),
-        SystemMenuItem(label: 'الإعدادات', enabled: true),
-        SystemMenuItem.separator(),
-        SystemMenuItem(label: 'خروج', enabled: true),
-      ]);
+      await trayManager.setContextMenu(menu);
+      trayManager.addListener(this);
     }
   }
 
   // MARK: - TrayListener
   @override
-  void onTrayIconClick() {
-    _showApp();
+  void onTrayIconMouseDown() {
+    trayManager.popUpContextMenu();
   }
 
   @override
-  void onTrayIconRightClick() {
+  void onTrayIconRightMouseDown() {
     // Show menu on right click
   }
 
   @override
-  void onTrayMenuItemClick(TrayEntry item) {
-    switch (item.label) {
-      case 'فتح التطبيق':
+  void onTrayMenuItemClick(MenuItem item) {
+    switch (item.key) {
+      case 'open_app':
         _showApp();
         break;
-      case 'رفع ملف':
+      case 'upload_file':
         _uploadFile();
         break;
-      case 'مشاركة شاشة':
+      case 'share_screen':
         _shareScreen();
         break;
-      case 'الإعدادات':
+      case 'settings':
         Get.toNamed('/settings');
         break;
-      case 'خروج':
+      case 'exit':
         _exitApp();
         break;
     }
@@ -136,7 +136,6 @@ class DesktopService extends GetxService implements TrayListener {
 
   // MARK: - File Watcher
   Future<void> _initializeFileWatcher() async {
-    // مراقبة المجلدات المحددة
     final watchPaths = [
       if (Platform.environment['HOME'] != null) Directory(Platform.environment['HOME']!),
       if (Platform.environment['USERPROFILE'] != null) Directory('${Platform.environment['USERPROFILE']}\\Desktop'),
@@ -158,7 +157,6 @@ class DesktopService extends GetxService implements TrayListener {
 
   void _handleFileSystemEvent(FileSystemEvent event) {
     if (event is FileSystemCreateEvent || event is FileSystemModifyEvent) {
-      // تحديث قائمة الملفات
       fileController.refreshFiles();
     }
   }
@@ -231,7 +229,6 @@ class DesktopService extends GetxService implements TrayListener {
   }
 
   void _shareScreen() {
-    // فتح شاشة مشاركة الشاشة
     Get.toNamed('/share-screen');
   }
 
