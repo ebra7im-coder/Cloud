@@ -1,6 +1,7 @@
 // services/desktop_service.dart
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:file_picker/file_picker.dart' as fp;
 import 'package:path/path.dart' as path;
@@ -97,8 +98,8 @@ class DesktopService extends GetxService with TrayListener {
     try {
       await hotKeyManager.register(
         HotKey(
-          keyCode: KeyCode.space,
-          modifiers: [KeyModifier.control, KeyModifier.shift],
+          key: PhysicalKeyboardKey.space,
+          modifiers: [HotKeyModifier.control, HotKeyModifier.shift],
           scope: HotKeyScope.system,
         ),
         keyDownHandler: (hotKey) {
@@ -108,8 +109,8 @@ class DesktopService extends GetxService with TrayListener {
       
       await hotKeyManager.register(
         HotKey(
-          keyCode: KeyCode.keyU,
-          modifiers: [KeyModifier.control, KeyModifier.shift],
+          key: PhysicalKeyboardKey.keyU,
+          modifiers: [HotKeyModifier.control, HotKeyModifier.shift],
           scope: HotKeyScope.system,
         ),
         keyDownHandler: (hotKey) {
@@ -119,8 +120,8 @@ class DesktopService extends GetxService with TrayListener {
       
       await hotKeyManager.register(
         HotKey(
-          keyCode: KeyCode.keyS,
-          modifiers: [KeyModifier.control, KeyModifier.shift],
+          key: PhysicalKeyboardKey.keyS,
+          modifiers: [HotKeyModifier.control, HotKeyModifier.shift],
           scope: HotKeyScope.system,
         ),
         keyDownHandler: (hotKey) {
